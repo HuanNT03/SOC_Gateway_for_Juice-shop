@@ -1,0 +1,113 @@
+# ==========================================
+# Project Sentinel - DevSecOps & AI Gateway
+# Git Ignore Configuration
+# ==========================================
+
+# ------------------------------------------
+# Course & Internal Assignment Documents
+# ------------------------------------------
+docs/\[NCUD-GPAI\] VinUni x VinSOC 6-week of Project Sentinel.md
+
+# ------------------------------------------
+# Environment & Secrets (DevSecOps Best Practices)
+# ------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+secrets/
+api_keys.json
+
+# ------------------------------------------
+# Python (AI Agent & Custom Tools)
+# ------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python Testing & Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
+
+# ------------------------------------------
+# Node.js & Web Application (Juice Shop / Gateway)
+# ------------------------------------------
+node_modules/
+jspm_packages/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.npm
+
+# ------------------------------------------
+# Runtime Logs & Security Scan Reports
+# ------------------------------------------
+*.log
+logs/
+request_logs/
+gateway_logs/
+reports/*.json
+!reports/.gitkeep
+docs/reports/*.json
+!docs/reports/.gitkeep
+
+# ------------------------------------------
+# IDE & System Files
+# ------------------------------------------
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
