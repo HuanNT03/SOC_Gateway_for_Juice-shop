@@ -82,7 +82,8 @@ lerna-debug.log*
 # Runtime Logs & Security Scan Reports
 # ------------------------------------------
 *.log
-logs/
+logs/*
+!logs/.gitkeep
 request_logs/
 gateway_logs/
 reports/*.json
