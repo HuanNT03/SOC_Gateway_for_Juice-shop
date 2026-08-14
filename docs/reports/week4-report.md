@@ -10,7 +10,7 @@ flowchart TD
     AdminExt -->|"Admin API (Port 8001)"| KongAdmin["Kong Admin API"]
     
     ClientExt -->|"Proxy Access (Port 8000)"| KongProxy["Kong API Gateway Proxy"]
-    ClientExt -.->|"Direct Access Port 3000 (Blocked)"| DirectBlock["❌ Blocked / Restricted<br>(Direct Upstream Access Forbidden)"]
+    ClientExt -.->|"Direct Access Attempt"| Unexposed["🔒 Port 3000 Not Exposed<br>(Internal Service Only - Cannot Access)"]
 
     subgraph SentinelNet["Isolated Docker Bridge Network (sentinel-net)"]
         KongProxy --> Router{"Route Evaluation & Matching"}
@@ -56,7 +56,7 @@ flowchart TD
 
 > **Lưu ý về Nguyên tắc Cô lập Mạng (Network Isolation)**:
 > - **Cổng 8000 (Kong Proxy)** là điểm đầu vào duy nhất (**Single Entrypoint**) cho mọi lưu lượng từ bên ngoài.
-> - **Cổng 3000 (Juice Shop)** nằm trong mạng nội bộ `sentinel-net`. Trong mô hình sản xuất DevSecOps, các yêu cầu truy cập trực tiếp cổng 3000 (không qua Gateway 8000) đều bị chặn để đảm bảo mọi request phải qua bộ lọc Zero Trust.
+> - **Cổng 3000 (Juice Shop)** là dịch vụ nội bộ (**Internal Service Only**) trong mạng `sentinel-net`. Cổng 3000 **không được expose/publish ra ngoài Host**, giúp ngăn ngừa hoàn toàn việc client truy cập trực tiếp vào backend mà bắt buộc phải đi qua bộ lọc Zero Trust của Kong Gateway.
 
 ---
 
@@ -99,12 +99,51 @@ sequenceDiagram
 
 ## 3. Nội Dung Báo Cáo Tóm Tắt & Quy Trình Triển Khai
 
-### A. Quản Lý Secret & Biến Môi Trường (Không Hardcode Secret)
-- Secret `KONG_VAULT_ENV_AGENT_API_KEY` được khai báo độc lập trong tệp `.env` (`agent-secure-key-2026`).
-- Khi container `sentinel-kong-gateway` khởi chạy, câu lệnh `command` trong `docker-compose.yml` thực thi thay thế biến môi trường động vào `/tmp/kong.yml` mà không lưu secret thô trong Git repository.
+## 3. Nội Dung Báo Cáo Tóm Tắt & Quy Trình Triển Khai
 
-### B. Cơ Chế Chặn Zero Trust & Consumer-Scoped Rate Limiting (Option B Architecture)
-- **Kiểm soát API Key**: Nếu request chứa header `x-api-key` hoặc `apikey`, plugin `pre-function` ở cấp Service lập tức kiểm tra tính hợp lệ. Nếu key không khớp secret môi trường, Gateway từ chối ngay với **`401 Unauthorized`**.
-- **Phân quyền Endpoint (RBAC Scope)**: Nếu Key hợp lệ, `pre-function` tiếp tục đối chiếu URI request với danh sách endpoint cho phép (`/api/Quantitys`, `/rest/products/search`, `/rest/user/login`). Nếu truy cập endpoint khác (ví dụ `/rest/admin/application-version`), Gateway từ chối ngay với **`403 Forbidden`**.
-- **Xác thực Consumer & Tránh Shadowing Route**: Sử dụng `key-auth` ở cấp Service với cấu hình `anonymous: anonymous-user`. Điều này giúp định danh chính xác Consumer `ai-agent` khi có API key hợp lệ, và tự động chuyển về `anonymous-user` khi không có key mà không gặp lỗi shadowing route trong thuật toán routing traditional của Kong.
-- **Giới hạn Tốc độ Dựa trên Consumer Identity**: Áp dụng plugin `rate-limiting` cho consumer `ai-agent` ở mức 20 requests/phút. Người dùng công khai (guest) không truyền API Key sẽ tuân theo rate limit mặc định của từng route (60 requests/phút đối với public endpoints và 20 requests/phút đối với registration anti-spam).
+### 3.1 🎯 Ứng Dụng Mẫu & Môi Trường Thử Nghiệm
+- **Backend Application**: Sử dụng OWASP Juice Shop (Docker Image: `bkimminich/juice-shop:latest`).
+- **Network Isolation Policy**: Chạy trong Docker Bridge Network `sentinel-net`. Cổng 3000 **không được expose ra ngoài Host** (Internal Service Only) nhằm đảm bảo 100% lưu lượng bắt buộc phải đi qua API Gateway.
+
+### 3.2 🛡️ Cấu Hình Hạ Tầng Kong API Gateway (Port 8000 & 8001)
+- **Cổng Proxy (Port 8000)**: Điểm đầu vào duy nhất (Single Entrypoint) cho mọi lưu lượng từ bên ngoài.
+- **Cổng Admin API (Port 8001)**: Dùng kiểm tra trạng thái và routes của Gateway. *(Khuyến nghị Production: Cần bảo mật bằng SSH Tunnel hoặc chặn public access)*.
+- **Quản Lý Secret Bí Mật**: Secret API Key được khai báo qua biến `KONG_VAULT_ENV_AGENT_API_KEY` trong `.env` (`agent-secure-key-2026`). Script LuaJIT `render_config.lua` nạp động vào `/tmp/kong.yml` khi boot container mà không lưu secret thô trong Git.
+- **Cơ Chế Bảo Vệ Hạ Tầng**:
+  - **Giới hạn kích thước Payload**: Sử dụng `allowed_payload_size: 1` (chặn gửi file/payload lớn hơn 1MB).
+  - **Giới hạn thời gian chờ (Timeouts)**: `connect_timeout: 5000ms`, `read_timeout: 5000ms`, `write_timeout: 5000ms` giúp bảo vệ Gateway không bị nghẽn kết nối và chống DoS/Slowloris nếu server đích sập.
+  - **Giấu API Key với Backend**: Cấu hình `hide_credentials: true` trong plugin `key-auth` để Kong tự động bóc tách header `x-api-key` trước khi proxy tới Juice Shop.
+
+### 3.3 🚦 Phân Luồng Routing, Phân Quyền ACL & Rate Limiting
+
+| Tên Route | Danh sách Paths | Phương Thức (Methods) | Phân Quyền & Nhận Diện | Giới Hạn Tốc Độ (Rate Limit) |
+|---|---|---|---|---|
+| **`guest-route`** | `/api/Quantitys`, `/rest/products/search`, `/rest/admin/application-version`, `/rest/user/login`, `/rest/user/reset-password` | `GET`, `POST`, `OPTIONS` | Công khai (Guest / User / Agent) | 60 requests/phút |
+| **`guest-register-route`** | `/api/Users`, `/api/SecurityAnswers` | `POST`, `OPTIONS` | Đăng ký tài khoản (Tách riêng để giới hạn method) | 20 requests/phút (Anti-Spam) |
+| **`user-route`** | `/rest/basket`, `/api/BasketItems`, `/rest/user/whoami`, `/profile/image/file`, `/rest/order-history` | `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS` | Đã đăng nhập (Yêu cầu Header `Authorization: Bearer <JWT>`) | 100 requests/phút |
+| **`static-route`** | `/` (Catch-all) | `GET`, `POST`, `HEAD`, `OPTIONS` | Nạp giao diện web SPA (HTML/CSS/JS) | Theo Route |
+
+- **Xác thực & Phân nhóm ACL**:
+  - AI Agent dùng `key-auth` nhận diện `ai-agent` (`agent-group`), chỉ được truy cập các endpoint được cấp phép trong allowlist.
+  - Request không có API Key đi qua `key-auth` với `anonymous: anonymous-user` (`guest-group`). Quyền JWT được backend Juice Shop kiểm tra *(Nhược điểm: Nếu hacker dùng JWT giả thì Gateway vẫn cho qua `user-route` do thiết kế Decoupled JWT)*.
+
+### 3.4 📜 Quản Lý Allowlist Động Cho AI Agent (`config/allowlist.json`)
+- Danh sách allowlist được lưu tại `config/allowlist.json` và nạp động tự động vào `pre-function` plugin bằng `render_config.lua` tại boot-time.
+- **Endpoints AI Agent được phép**: `/api/Quantitys`, `/rest/products/search`, `/rest/user/login`.
+
+### 3.5 🔧 Sự Cố Kỹ Thuật Đã Xử Lý & Vấn Đề Tồn Đọng
+
+#### A. Sự Cố Đã Xử Lý (Route Shadowing Bug)
+- **Vấn đề**: `agent-route` bị shadow bởi `guest-route` làm cho rate limit của Agent bị áp nhầm theo `guest-route` (60 req/min).
+- **Nguyên nhân**: Thuật toán tính điểm (Point Scoring) của Kong 3.x Traditional Router ưu tiên route có số lượng path nhiều hơn (5 paths > 3 paths).
+- **Giải pháp**: Triển khai `key-auth` ở cấp Service với `anonymous` fallback, xóa `agent-route` trùng lặp và cấu hình Consumer-Scoped Rate Limiting (**20 req/min**) cho `ai-agent`.
+
+#### B. Các Vấn Đề Tồn Đọng & Thảo Luận Kỹ Thuật
+1. **Vấn đề Cấu hình Method theo Route**:
+   - `methods` áp dụng cho toàn bộ path trong cùng một route. Đã giải quyết cho `POST /api/Users` bằng cách tách riêng thành `guest-register-route`.
+2. **Vấn đề Static Route `/` và khả năng truy cập Endpoint chưa liệt kê**:
+   - *Câu hỏi*: Vấn đề xảy ra khi sử dụng static route `/` $\rightarrow$ Các endpoint chưa được đề cập trong route có bị truy cập được không? Có nên lập Denylist hay không?
+   - *Trả lời*: Trong Kong Router, exact/prefix match có path dài hơn (như `/api/Quantitys`) luôn có độ ưu tiên cao hơn catch-all `/` của `static-route`. Tuy nhiên, do có sử dụng `/` để lấy được các endpoint giao diện từ web nên các endpoint chưa được nhắc tới trong route vẫn có thể truy cập được bình thường qua `/`, chưa thật sự deny endpoint đối với trường hợp của người dùng/tester.
+3. **Vấn đề API Key truyền chuỗi rỗng (`""`)**:
+   - *Câu hỏi*: Nếu API Key truyền là chuỗi rỗng `""` thì có truy cập được không?
+   - *Trả lời*: Mã nguồn Lua trong `pre-function` kiểm tra `if key and key ~= "" then`. Nếu truyền `""`, Gateway sẽ xử lý như một request không có key (đưa về nhóm Guest) thay vì báo 401 Unauthorized.
