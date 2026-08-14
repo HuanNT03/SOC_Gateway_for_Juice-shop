@@ -1,7 +1,7 @@
 # ==============================================================================
 # PROJECT SENTINEL - DEVSECOPS KONG API GATEWAY DECLARATIVE CONFIGURATION
 # Mode: DB-less (KONG_DATABASE=off)
-# Architecture: Option A - Service Pre-Function Zero Trust Policy & Header Routing
+# Architecture: Option B - Service-Level Auth + Consumer-Scoped Rate Limiting
 # Target Service: OWASP Juice Shop (http://web:3000)
 # ==============================================================================
 
@@ -60,50 +60,36 @@ services:
                 end
               end
 
+      # Service-Level Key-Auth: Identifies consumer for ALL requests passing through Gateway
+      # If request contains valid x-api-key → consumer = ai-agent (authenticated)
+      # If request has NO key → fallback to anonymous-user consumer (unauthenticated guest)
+      # NOTE: Invalid keys are already rejected by pre-function above (401 Unauthorized)
+      #       so key-auth only receives valid keys or no key at all.
+      - name: key-auth
+        config:
+          key_names:
+            - x-api-key
+            - apikey
+          hide_credentials: true  # Redacts API Key before proxying to Juice Shop
+          anonymous: anonymous-user  # Fallback consumer for requests without API key
+
+      # Service-Level ACL: Enforces group-based access control for all consumers
+      # Both agent-group (ai-agent) and guest-group (anonymous-user) are allowed
+      - name: acl
+        config:
+          allow:
+            - agent-group
+            - guest-group
+
     # --------------------------------------------------------------------------
     # 2. ROUTES & ACCESS CONTROL DEFINITIONS
     # --------------------------------------------------------------------------
     routes:
-      # ------------------------------------------------------------------------
-      # Route 1: AI Security Agent Allowed Route (Header-Based Priority Match)
-      # Purpose: Dedicated route for AI Agent scanner requests containing x-api-key
-      # ------------------------------------------------------------------------
-      - name: agent-route
-        regex_priority: 200
-        paths:
-          - ~/api/Quantitys
-          - ~/rest/products/search
-          - ~/rest/user/login
-        methods:
-          - GET
-          - POST
-          - OPTIONS
-        headers:
-          x-api-key:
-            - "~.+"  # Matches requests containing x-api-key header
-        strip_path: false
-        plugins:
-          # Strict Key-Auth Plugin: Authenticates consumer ai-agent
-          - name: key-auth
-            config:
-              key_names:
-                - x-api-key
-                - apikey
-              hide_credentials: true  # Redacts API Key before proxying to Juice Shop
-          # ACL Plugin: Only allows AI Security Agent (agent-group)
-          - name: acl
-            config:
-              allow:
-                - agent-group
-          # Dedicated Rate Limiting for AI Security Agent Scanner: 20 requests per minute
-          - name: rate-limiting
-            config:
-              minute: 20
-              policy: local
 
       # ------------------------------------------------------------------------
-      # Route 2: Guest Allowed Route (For Visitors WITHOUT x-api-key)
-      # Purpose: Publicly accessible endpoints for unauthenticated users
+      # Route 1: Guest Allowed Route (Publicly accessible endpoints)
+      # Purpose: Serves public endpoints for all users (guest + agent)
+      # Agent requests are differentiated by consumer-scoped rate limiting
       # ------------------------------------------------------------------------
       - name: guest-route
         paths:
@@ -125,7 +111,7 @@ services:
               policy: local
 
       # ------------------------------------------------------------------------
-      # Route 3: Guest Registration Route (POST-only for Visitors WITHOUT x-api-key)
+      # Route 2: Guest Registration Route (POST-only for Visitors WITHOUT x-api-key)
       # Purpose: Restricts /api/Users and /api/SecurityAnswers to POST method
       # ------------------------------------------------------------------------
       - name: guest-register-route
@@ -144,7 +130,7 @@ services:
               policy: local
 
       # ------------------------------------------------------------------------
-      # Route 4: Logged-in User Allowed Route
+      # Route 3: Logged-in User Allowed Route
       # Purpose: Authenticated user endpoints requiring Authorization Bearer header
       # ------------------------------------------------------------------------
       - name: user-route
@@ -174,7 +160,7 @@ services:
               policy: local
 
       # ------------------------------------------------------------------------
-      # Route 5: Static Frontend Assets Route (Catch-all Fallback for Web Visitors)
+      # Route 4: Static Frontend Assets Route (Catch-all Fallback for Web Visitors)
       # Purpose: Serves Single Page Application HTML/CSS/JS frontend bundles
       # ------------------------------------------------------------------------
       - name: static-route
@@ -188,7 +174,20 @@ services:
         strip_path: false
 
 # ------------------------------------------------------------------------------
-# 3. CONSUMERS & CREDENTIALS DEFINITIONS
+# 3. CONSUMER-SCOPED PLUGINS (Top-Level)
+# Purpose: Apply different rate limits per consumer identity
+# ------------------------------------------------------------------------------
+plugins:
+  # Dedicated Rate Limiting for AI Security Agent consumer: 20 requests per minute
+  # This overrides route-level rate limiting when consumer = ai-agent
+  - name: rate-limiting
+    consumer: ai-agent
+    config:
+      minute: 20
+      policy: local
+
+# ------------------------------------------------------------------------------
+# 4. CONSUMERS & CREDENTIALS DEFINITIONS
 # ------------------------------------------------------------------------------
 consumers:
   # AI Security Agent Consumer
