@@ -8,11 +8,7 @@ services:
     image: bkimminich/juice-shop:latest
     container_name: sentinel-juice-shop
     restart: always
-    environment:
-      - NODE_ENV=development
-    ports:
-      # Port 3000 exposed for backend access
-      - "3000:3000"
+    # Port 3000 is NOT exposed to host to enforce strict API Gateway isolation
     networks:
       - sentinel-net
 
