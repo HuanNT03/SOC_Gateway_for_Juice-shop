@@ -1,12 +1,14 @@
 # ==============================================================================
-# PROJECT SENTINEL - DEVSECOPS & AI GATEWAY MAKEFILE
-# Target Web App: OWASP Juice Shop (v20.1.1)
+# PROJECT SENTINEL - DEVSECOPS & KONG API GATEWAY MAKEFILE
+# Target Web App: OWASP Juice Shop (v20.1.1) + Kong API Gateway (v3.6)
 # ==============================================================================
 
 # Variables
 JUICE_SHOP_IMAGE := bkimminich/juice-shop:v20.1.1
+KONG_IMAGE       := kong:3.6
 COMPOSE_FILE     := docker-compose.yml
 SERVICE_WEB      := web
+SERVICE_GATEWAY  := gateway
 
 # Color Palette for CLI Help
 CYAN   := \033[36m
@@ -15,7 +17,7 @@ YELLOW := \033[33m
 RED    := \033[31m
 RESET  := \033[0m
 
-.PHONY: help web-pull web-up web-down web-restart web-logs web-status web-clean
+.PHONY: help up down restart status logs routes clean web-pull web-logs
 
 # Default target when running 'make' without arguments
 .DEFAULT_GOAL := help
@@ -29,7 +31,7 @@ help: ## Hiển thị menu hướng dẫn các lệnh trong Makefile
 	@echo "$(CYAN)==============================================================================$(RESET)"
 	@echo "$(CYAN)                     PROJECT SENTINEL - MAKEFILE CLI                           $(RESET)"
 	@echo "$(CYAN)==============================================================================$(RESET)"
-	@echo "$(YELLOW)Mục đích: Quản lý ứng dụng thử nghiệm OWASP Juice Shop (v20.1.1)$(RESET)"
+	@echo "$(YELLOW)Mục đích: Quản lý hạ tầng Kong API Gateway và OWASP Juice Shop (v20.1.1)$(RESET)"
 	@echo ""
 	@echo "$(GREEN)Cú pháp: make <tên-lệnh>$(RESET)"
 	@echo ""
@@ -40,7 +42,46 @@ help: ## Hiển thị menu hướng dẫn các lệnh trong Makefile
 	@echo ""
 
 ## -----------------------------------------------------------------------------
-## WEB TARGET MANAGEMENT (OWASP Juice Shop v20.1.1)
+## INFRASTRUCTURE & GATEWAY TARGETS
+## -----------------------------------------------------------------------------
+
+up: ## Khởi chạy toàn bộ hạ tầng (Juice Shop + Kong Gateway) trên cổng 8000
+	@echo "$(CYAN)[+] Đang khởi chạy hạ tầng Kong Gateway và Juice Shop...$(RESET)"
+	docker compose -f $(COMPOSE_FILE) up -d
+	@echo "$(GREEN)[✔] Hạ tầng đã khởi chạy thành công!$(RESET)"
+	@echo "$(GREEN)[✔] Kong Proxy Access:  http://localhost:8000$(RESET)"
+	@echo "$(GREEN)[✔] Kong Admin API:     http://localhost:8001$(RESET)"
+
+down: ## Dừng và gỡ bỏ toàn bộ container (Kong Gateway + Juice Shop)
+	@echo "$(YELLOW)[!] Đang dừng các container hạ tầng...$(RESET)"
+	docker compose -f $(COMPOSE_FILE) down
+	@echo "$(GREEN)[✔] Đã dừng và gỡ bỏ các container!$(RESET)"
+
+restart: ## Khởi động lại toàn bộ dịch vụ (Kong Gateway + Juice Shop)
+	@echo "$(CYAN)[+] Đang khởi động lại toàn bộ dịch vụ...$(RESET)"
+	docker compose -f $(COMPOSE_FILE) restart
+	@echo "$(GREEN)[✔] Đã khởi động lại dịch vụ thành công!$(RESET)"
+
+status: ## Kiểm tra trạng thái hoạt động và Health Check của các container
+	@echo "$(CYAN)[+] Trạng thái các containers hạ tầng:$(RESET)"
+	docker compose -f $(COMPOSE_FILE) ps
+
+logs: ## Xem nhật ký (logs) thời gian thực của toàn bộ hệ thống
+	@echo "$(CYAN)[+] Hiển thị logs toàn hệ thống (Nhấn Ctrl+C để thoát)...$(RESET)"
+	docker compose -f $(COMPOSE_FILE) logs -f
+
+routes: ## Truy vấn danh sách Routes đang nạp trong Kong Admin API (Port 8001)
+	@echo "$(CYAN)[+] Danh sách Routes đang hoạt động trong Kong Admin API:$(RESET)"
+	@curl -s http://localhost:8001/routes | grep -o '"paths":\[[^]]*\]' || echo "$(YELLOW)Chưa thể kết nối tới Admin API 8001$(RESET)"
+
+clean: ## Dọn dẹp hoàn toàn containers, volumes và Docker images của hệ thống
+	@echo "$(RED)[!] Đang dọn dẹp containers, volumes và images...$(RESET)"
+	docker compose -f $(COMPOSE_FILE) down --volumes --remove-orphans
+	docker image rm -f $(JUICE_SHOP_IMAGE) $(KONG_IMAGE) || true
+	@echo "$(GREEN)[✔] Đã dọn dẹp hoàn tất!$(RESET)"
+
+## -----------------------------------------------------------------------------
+## WEB BACKEND DEBUG TARGETS
 ## -----------------------------------------------------------------------------
 
 web-pull: ## Tải Docker image OWASP Juice Shop v20.1.1 từ Docker Hub
@@ -48,32 +89,6 @@ web-pull: ## Tải Docker image OWASP Juice Shop v20.1.1 từ Docker Hub
 	docker compose -f $(COMPOSE_FILE) pull $(SERVICE_WEB)
 	@echo "$(GREEN)[✔] Đã tải xong Docker image Juice Shop!$(RESET)"
 
-web-up: ## Khởi chạy container Juice Shop chạy ngầm (detached mode) trên cổng 3000
-	@echo "$(CYAN)[+] Đang khởi chạy OWASP Juice Shop (v20.1.1)...$(RESET)"
-	docker compose -f $(COMPOSE_FILE) up -d $(SERVICE_WEB)
-	@echo "$(GREEN)[✔] Juice Shop đã khởi chạy thành công tại http://localhost:3000$(RESET)"
-
-web-down: ## Dừng và gỡ bỏ container Juice Shop
-	@echo "$(YELLOW)[!] Đang dừng container Juice Shop...$(RESET)"
-	docker compose -f $(COMPOSE_FILE) stop $(SERVICE_WEB)
-	docker compose -f $(COMPOSE_FILE) rm -f $(SERVICE_WEB)
-	@echo "$(GREEN)[✔] Đã dừng và gỡ bỏ container Juice Shop!$(RESET)"
-
-web-restart: ## Khởi động lại service Juice Shop
-	@echo "$(CYAN)[+] Đang khởi động lại service Juice Shop...$(RESET)"
-	docker compose -f $(COMPOSE_FILE) restart $(SERVICE_WEB)
-	@echo "$(GREEN)[✔] Đã khởi động lại Juice Shop!$(RESET)"
-
-web-logs: ## Xem nhật ký (logs) thời gian thực của container Juice Shop
+web-logs: ## Xem nhật ký (logs) thời gian thực riêng của container Juice Shop
 	@echo "$(CYAN)[+] Hiển thị logs của Juice Shop (Nhấn Ctrl+C để thoát)...$(RESET)"
 	docker compose -f $(COMPOSE_FILE) logs -f $(SERVICE_WEB)
-
-web-status: ## Kiểm tra trạng thái hoạt động và Health Check của Juice Shop container
-	@echo "$(CYAN)[+] Trạng thái container Juice Shop:$(RESET)"
-	docker compose -f $(COMPOSE_FILE) ps $(SERVICE_WEB)
-
-web-clean: ## Dừng container, xóa network và dọn dẹp Docker cache/images Juice Shop
-	@echo "$(RED)[!] Đang dọn dẹp container, network và image Juice Shop...$(RESET)"
-	docker compose -f $(COMPOSE_FILE) down --volumes --remove-orphans
-	docker image rm -f $(JUICE_SHOP_IMAGE) || true
-	@echo "$(GREEN)[✔] Đã dọn dẹp hoàn tất!$(RESET)"

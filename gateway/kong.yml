@@ -1,0 +1,227 @@
+# ==============================================================================
+# PROJECT SENTINEL - DEVSECOPS KONG API GATEWAY DECLARATIVE CONFIGURATION
+# Mode: DB-less (KONG_DATABASE=off)
+# Target Service: OWASP Juice Shop (http://web:3000)
+# ==============================================================================
+
+_format_version: "3.0"
+_transform: true
+
+# ------------------------------------------------------------------------------
+# 1. SERVICES & BACKEND UPSTREAM CONFIGURATION
+# ------------------------------------------------------------------------------
+services:
+  - name: juice-shop-service
+    # Service upstream details inside isolated Docker bridge network
+    host: web
+    port: 3000
+    protocol: http
+    # Common Timeouts (in milliseconds) to prevent connection pool exhaustion
+    connect_timeout: 5000  # 5 seconds connection setup timeout
+    read_timeout: 5000     # 5 seconds response read timeout
+    write_timeout: 5000    # 5 seconds client request write timeout
+
+    # Service-Level Plugins applied to ALL traffic through Gateway
+    plugins:
+      # Global Request Payload Size Limiting (Protects backend from oversized uploads/DoS)
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 1  # 1 megabyte (MB) maximum payload size limit
+
+    # --------------------------------------------------------------------------
+    # 2. ROUTES & ACCESS CONTROL DEFINITIONS
+    # --------------------------------------------------------------------------
+    routes:
+      # ------------------------------------------------------------------------
+      # Route 1: AI Security Agent Allowed Route (Highest Priority)
+      # Purpose: Endpoints accessible ONLY by AI Agent scanner with x-api-key
+      # Security Rules:
+      #   - Valid Key   -> 200 OK (Rate limit 20 req/min)
+      #   - Invalid Key -> 401 Unauthorized (Strict Key-Auth plugin without anonymous fallback)
+      # ------------------------------------------------------------------------
+      - name: agent-route
+        paths:
+          - /api/Quantitys
+          - /rest/products/search
+          - /rest/user/login
+        methods:
+          - GET
+          - POST
+          - OPTIONS
+        headers:
+          x-api-key:
+            - "~.+"  # Higher priority route matching when x-api-key header is present
+        strip_path: false
+        plugins:
+          # Strict Key-Auth Plugin: Validates API key. Rejects invalid key with 401 Unauthorized
+          - name: key-auth
+            config:
+              key_names:
+                - x-api-key
+                - apikey
+              hide_credentials: true  # Redacts API Key before proxying to Juice Shop
+          # ACL Plugin: Only allows AI Security Agent (agent-group)
+          - name: acl
+            config:
+              allow:
+                - agent-group
+          # Dedicated Rate Limiting for AI Security Agent Scanner: 20 requests per minute
+          - name: rate-limiting
+            config:
+              minute: 20
+              policy: local
+
+      # ------------------------------------------------------------------------
+      # Route 2: Guest Allowed Route
+      # Purpose: Publicly accessible endpoints for unauthenticated users
+      # ------------------------------------------------------------------------
+      - name: guest-route
+        paths:
+          - /api/Quantitys
+          - /rest/products/search
+          - /rest/admin/application-version
+          - /rest/user/login
+          - /rest/user/reset-password
+        methods:
+          - GET
+          - POST
+          - OPTIONS
+        strip_path: false
+        plugins:
+          # Key-Auth Plugin with Anonymous Fallback: Identifies agent if API key is sent
+          - name: key-auth
+            config:
+              key_names:
+                - x-api-key
+                - apikey
+              hide_credentials: true
+              anonymous: anonymous-user
+          # ACL Plugin: Explicitly DENIES AI Security Agent (agent-group) from non-agent routes -> 403 Forbidden
+          - name: acl
+            config:
+              deny:
+                - agent-group
+          # Rate Limiting for Guest Users: 60 requests per minute
+          - name: rate-limiting
+            config:
+              minute: 60
+              policy: local
+
+      # ------------------------------------------------------------------------
+      # Route 3: Guest Registration Route (POST-only)
+      # Purpose: Restricts /api/Users and /api/SecurityAnswers to POST method
+      # ------------------------------------------------------------------------
+      - name: guest-register-route
+        paths:
+          - /api/Users
+          - /api/SecurityAnswers
+        methods:
+          - POST
+          - OPTIONS
+        strip_path: false
+        plugins:
+          # Key-Auth Plugin with Anonymous Fallback
+          - name: key-auth
+            config:
+              key_names:
+                - x-api-key
+                - apikey
+              hide_credentials: true
+              anonymous: anonymous-user
+          # ACL Plugin: Explicitly DENIES AI Security Agent (agent-group) from registration endpoints
+          - name: acl
+            config:
+              deny:
+                - agent-group
+          # Rate Limiting for Guest Registration: 20 requests per minute (Anti-Spam)
+          - name: rate-limiting
+            config:
+              minute: 20
+              policy: local
+
+      # ------------------------------------------------------------------------
+      # Route 4: Logged-in User Allowed Route
+      # Purpose: Authenticated user endpoints requiring Authorization Bearer header
+      # ------------------------------------------------------------------------
+      - name: user-route
+        paths:
+          - /api/Quantitys
+          - /rest/products/search
+          - /rest/basket
+          - /api/BasketItems
+          - /rest/user/whoami
+          - /profile/image/file
+          - /rest/order-history
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        headers:
+          authorization:
+            - "~^Bearer "  # Enforces presence of Authorization Bearer JWT header
+        strip_path: false
+        plugins:
+          # Key-Auth Plugin with Anonymous Fallback
+          - name: key-auth
+            config:
+              key_names:
+                - x-api-key
+                - apikey
+              hide_credentials: true
+              anonymous: anonymous-user
+          # ACL Plugin: Explicitly DENIES AI Security Agent (agent-group) from user endpoints
+          - name: acl
+            config:
+              deny:
+                - agent-group
+          # Rate Limiting for Authenticated Users: 100 requests per minute
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+
+      # ------------------------------------------------------------------------
+      # Route 5: Static Frontend Assets Route (Catch-all Fallback)
+      # Purpose: Serves Single Page Application HTML/CSS/JS frontend bundles
+      # ------------------------------------------------------------------------
+      - name: static-route
+        paths:
+          - /
+        methods:
+          - GET
+          - HEAD
+          - OPTIONS
+        strip_path: false
+        plugins:
+          # Key-Auth Plugin with Anonymous Fallback
+          - name: key-auth
+            config:
+              key_names:
+                - x-api-key
+                - apikey
+              hide_credentials: true
+              anonymous: anonymous-user
+          # ACL Plugin: Explicitly DENIES AI Security Agent (agent-group) from accessing static frontend
+          - name: acl
+            config:
+              deny:
+                - agent-group
+
+# ------------------------------------------------------------------------------
+# 3. CONSUMERS & CREDENTIALS DEFINITIONS
+# ------------------------------------------------------------------------------
+consumers:
+  # AI Security Agent Consumer
+  - username: ai-agent
+    keyauth_credentials:
+      # Dynamic secret loaded from environment variable via Kong Vault Environment Plugin
+      - key: "{vault://env/AGENT_API_KEY}"
+    acls:
+      - group: agent-group
+
+  # Anonymous / Unauthenticated User Consumer Fallback
+  - username: anonymous-user
+    acls:
+      - group: guest-group

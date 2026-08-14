@@ -1,18 +1,71 @@
+# ==============================================================================
+# PROJECT SENTINEL - DOCKER COMPOSE ORCHESTRATION
+# Architecture: Kong API Gateway (Port 8000) + OWASP Juice Shop (Isolated Network)
+# ==============================================================================
+
 services:
+  # ----------------------------------------------------------------------------
+  # 1. OWASP JUICE SHOP WEB APPLICATION (ISOLATED BACKEND)
+  # ----------------------------------------------------------------------------
   web:
     image: bkimminich/juice-shop:v20.1.1
     container_name: sentinel-juice-shop
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    # Port 3000 is intentionally NOT mapped to host to enforce 100% Gateway Isolation!
     environment:
       - NODE_ENV=production
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
+      # Health Check: Juice Shop v20.1.1 is a DISTROLESS image (no /bin/sh, wget, curl)
+      # Must use CMD form (not CMD-SHELL) with Node.js binary directly
+      # Node.js http.get checks if server responds with HTTP 200 on root path
+      test: ["CMD", "/nodejs/bin/node", "-e", "require('http').get('http://localhost:3000/', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 15s    # Check every 15 seconds
+      timeout: 5s      # Maximum wait time per health check attempt
+      retries: 5       # Mark unhealthy after 5 consecutive failures
+      start_period: 45s  # Grace period for Juice Shop SQLite database initialization
+    networks:
+      - sentinel-network
+
+  # ----------------------------------------------------------------------------
+  # 2. KONG API GATEWAY (DB-LESS DECLARATIVE MODE)
+  # ----------------------------------------------------------------------------
+  gateway:
+    image: kong:3.6
+    container_name: sentinel-kong-gateway
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # DB-less Mode Configuration
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /usr/local/kong/declarative/kong.yml
+      # Explicitly force Kong to use Docker internal DNS Server (127.0.0.11)
+      KONG_DNS_RESOLVER: "127.0.0.11"
+      # CRITICAL FIX for Docker + Ubuntu systemd-resolved (127.0.53.53 issue):
+      # Docker internal DNS does NOT support SRV records. Kong default order includes SRV first,
+      # causing SRV queries to fall back to host systemd-resolved which returns 127.0.53.53.
+      # Setting KONG_DNS_ORDER to 'A,CNAME' skips SRV queries and resolves 'web' to container IP directly.
+      KONG_DNS_ORDER: "A,CNAME"
+      # Kong Vault Environment Variables Resolution
+      KONG_VAULT_ENV_PREFIX: ${KONG_VAULT_ENV_PREFIX:-KONG_VAULT_ENV_}
+      KONG_VAULT_ENV_AGENT_API_KEY: ${KONG_VAULT_ENV_AGENT_API_KEY:-sentinel-agent-secure-key-2026}
+      # Standard Logging & Listening Ports
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+    volumes:
+      # Mount declarative configuration file
+      - ./gateway/kong.yml:/usr/local/kong/declarative/kong.yml:ro
+    ports:
+      # Port 8000: Kong Proxy (Public Entry Point)
+      - "8000:8000"
+      # Port 8001: Kong Admin API (DevSecOps Management)
+      - "8001:8001"
+    depends_on:
+      - web
     networks:
       - sentinel-network
 
