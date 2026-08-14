@@ -1,6 +1,7 @@
 # ==============================================================================
 # PROJECT SENTINEL - DEVSECOPS KONG API GATEWAY DECLARATIVE CONFIGURATION
 # Mode: DB-less (KONG_DATABASE=off)
+# Architecture: Option A - Service Pre-Function Zero Trust Policy Enforcement
 # Target Service: OWASP Juice Shop (http://web:3000)
 # ==============================================================================
 
@@ -28,16 +29,44 @@ services:
         config:
           allowed_payload_size: 1  # 1 megabyte (MB) maximum payload size limit
 
+      # Service-Level Pre-Function: Option A Zero Trust Enforcement Policy
+      # Rules:
+      #   1. If request contains x-api-key / apikey header:
+      #      a. Verify Key Validity: Must match ${AGENT_API_KEY} environment secret.
+      #         If key is INVALID -> Rejects with 401 Unauthorized across ALL routes.
+      #      b. Verify Route Scope: Must match allowed agent endpoints (/api/Quantitys, /rest/products/search, /rest/user/login).
+      #         If path is NOT allowed -> Rejects with 403 Forbidden.
+      #   2. If x-api-key header is MISSING -> Allows public guest traffic to proceed.
+      - name: pre-function
+        config:
+          access:
+            - |
+              local key = kong.request.get_header("x-api-key") or kong.request.get_header("apikey")
+              if key and key ~= "" then
+                local valid_key = "${AGENT_API_KEY}"
+                if key ~= valid_key then
+                  return kong.response.exit(401, { message = "Invalid authentication credentials" })
+                end
+
+                local path = kong.request.get_path()
+                local allowed_paths = {
+                  ["/api/Quantitys"] = true,
+                  ["/rest/products/search"] = true,
+                  ["/rest/user/login"] = true
+                }
+
+                if not allowed_paths[path] then
+                  return kong.response.exit(403, { message = "You cannot consume this service" })
+                end
+              end
+
     # --------------------------------------------------------------------------
     # 2. ROUTES & ACCESS CONTROL DEFINITIONS
     # --------------------------------------------------------------------------
     routes:
       # ------------------------------------------------------------------------
-      # Route 1: AI Security Agent Allowed Route (Highest Priority)
-      # Purpose: Endpoints accessible ONLY by AI Agent scanner with x-api-key
-      # Security Rules:
-      #   - Valid Key   -> 200 OK (Rate limit 20 req/min)
-      #   - Invalid Key -> 401 Unauthorized (Strict Key-Auth plugin without anonymous fallback)
+      # Route 1: AI Security Agent Allowed Route
+      # Purpose: Dedicated route for AI Agent scanner requests containing x-api-key
       # ------------------------------------------------------------------------
       - name: agent-route
         paths:
@@ -50,10 +79,10 @@ services:
           - OPTIONS
         headers:
           x-api-key:
-            - "~.+"  # Higher priority route matching when x-api-key header is present
+            - "~.+"  # Matches requests containing x-api-key header
         strip_path: false
         plugins:
-          # Strict Key-Auth Plugin: Validates API key. Rejects invalid key with 401 Unauthorized
+          # Strict Key-Auth Plugin: Authenticates consumer ai-agent
           - name: key-auth
             config:
               key_names:
@@ -72,7 +101,7 @@ services:
               policy: local
 
       # ------------------------------------------------------------------------
-      # Route 2: Guest Allowed Route
+      # Route 2: Guest Allowed Route (For Visitors WITHOUT x-api-key)
       # Purpose: Publicly accessible endpoints for unauthenticated users
       # ------------------------------------------------------------------------
       - name: guest-route
@@ -88,19 +117,6 @@ services:
           - OPTIONS
         strip_path: false
         plugins:
-          # Key-Auth Plugin with Anonymous Fallback: Identifies agent if API key is sent
-          - name: key-auth
-            config:
-              key_names:
-                - x-api-key
-                - apikey
-              hide_credentials: true
-              anonymous: anonymous-user
-          # ACL Plugin: Explicitly DENIES AI Security Agent (agent-group) from non-agent routes -> 403 Forbidden
-          - name: acl
-            config:
-              deny:
-                - agent-group
           # Rate Limiting for Guest Users: 60 requests per minute
           - name: rate-limiting
             config:
@@ -108,7 +124,7 @@ services:
               policy: local
 
       # ------------------------------------------------------------------------
-      # Route 3: Guest Registration Route (POST-only)
+      # Route 3: Guest Registration Route (POST-only for Visitors WITHOUT x-api-key)
       # Purpose: Restricts /api/Users and /api/SecurityAnswers to POST method
       # ------------------------------------------------------------------------
       - name: guest-register-route
@@ -120,19 +136,6 @@ services:
           - OPTIONS
         strip_path: false
         plugins:
-          # Key-Auth Plugin with Anonymous Fallback
-          - name: key-auth
-            config:
-              key_names:
-                - x-api-key
-                - apikey
-              hide_credentials: true
-              anonymous: anonymous-user
-          # ACL Plugin: Explicitly DENIES AI Security Agent (agent-group) from registration endpoints
-          - name: acl
-            config:
-              deny:
-                - agent-group
           # Rate Limiting for Guest Registration: 20 requests per minute (Anti-Spam)
           - name: rate-limiting
             config:
@@ -163,19 +166,6 @@ services:
             - "~^Bearer "  # Enforces presence of Authorization Bearer JWT header
         strip_path: false
         plugins:
-          # Key-Auth Plugin with Anonymous Fallback
-          - name: key-auth
-            config:
-              key_names:
-                - x-api-key
-                - apikey
-              hide_credentials: true
-              anonymous: anonymous-user
-          # ACL Plugin: Explicitly DENIES AI Security Agent (agent-group) from user endpoints
-          - name: acl
-            config:
-              deny:
-                - agent-group
           # Rate Limiting for Authenticated Users: 100 requests per minute
           - name: rate-limiting
             config:
@@ -183,7 +173,7 @@ services:
               policy: local
 
       # ------------------------------------------------------------------------
-      # Route 5: Static Frontend Assets Route (Catch-all Fallback)
+      # Route 5: Static Frontend Assets Route (Catch-all Fallback for Web Visitors)
       # Purpose: Serves Single Page Application HTML/CSS/JS frontend bundles
       # ------------------------------------------------------------------------
       - name: static-route
@@ -195,20 +185,6 @@ services:
           - HEAD
           - OPTIONS
         strip_path: false
-        plugins:
-          # Key-Auth Plugin with Anonymous Fallback
-          - name: key-auth
-            config:
-              key_names:
-                - x-api-key
-                - apikey
-              hide_credentials: true
-              anonymous: anonymous-user
-          # ACL Plugin: Explicitly DENIES AI Security Agent (agent-group) from accessing static frontend
-          - name: acl
-            config:
-              deny:
-                - agent-group
 
 # ------------------------------------------------------------------------------
 # 3. CONSUMERS & CREDENTIALS DEFINITIONS
@@ -217,8 +193,8 @@ consumers:
   # AI Security Agent Consumer
   - username: ai-agent
     keyauth_credentials:
-      # Dynamic secret loaded from environment variable via Kong Vault Environment Plugin
-      - key: "{vault://env/AGENT_API_KEY}"
+      # Dynamic secret resolved from environment variable via declarative env substitution (NO hardcoded key in repo)
+      - key: "${AGENT_API_KEY}"
     acls:
       - group: agent-group
 

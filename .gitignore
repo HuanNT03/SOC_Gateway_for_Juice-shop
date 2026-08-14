@@ -112,3 +112,8 @@ docs/reports/*.json
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# ------------------------------------------
+# Implement Plans
+# ------------------------------------------
+plans/
