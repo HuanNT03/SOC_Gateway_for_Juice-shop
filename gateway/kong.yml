@@ -1,7 +1,7 @@
 # ==============================================================================
 # PROJECT SENTINEL - DEVSECOPS KONG API GATEWAY DECLARATIVE CONFIGURATION
 # Mode: DB-less (KONG_DATABASE=off)
-# Architecture: Option A - Service Pre-Function Zero Trust Policy Enforcement
+# Architecture: Option A - Service Pre-Function Zero Trust Policy & Header Routing
 # Target Service: OWASP Juice Shop (http://web:3000)
 # ==============================================================================
 
@@ -65,18 +65,22 @@ services:
     # --------------------------------------------------------------------------
     routes:
       # ------------------------------------------------------------------------
-      # Route 1: AI Security Agent Allowed Route (Highest Priority Match)
-      # Purpose: Dedicated route for AI Agent scanner requests
+      # Route 1: AI Security Agent Allowed Route (Header-Based Priority Match)
+      # Purpose: Dedicated route for AI Agent scanner requests containing x-api-key
       # ------------------------------------------------------------------------
       - name: agent-route
+        regex_priority: 200
         paths:
-          - /api/Quantitys
-          - /rest/products/search
-          - /rest/user/login
+          - ~/api/Quantitys
+          - ~/rest/products/search
+          - ~/rest/user/login
         methods:
           - GET
           - POST
           - OPTIONS
+        headers:
+          x-api-key:
+            - "~.+"  # Matches requests containing x-api-key header
         strip_path: false
         plugins:
           # Strict Key-Auth Plugin: Authenticates consumer ai-agent
@@ -103,6 +107,7 @@ services:
       # ------------------------------------------------------------------------
       - name: guest-route
         paths:
+          - /api/Quantitys
           - /rest/products/search
           - /rest/admin/application-version
           - /rest/user/login
