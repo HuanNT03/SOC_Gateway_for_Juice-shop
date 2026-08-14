@@ -7,31 +7,43 @@ flowchart TD
     Client["External Clients / AI Agent / Tester"] -->|"Port 8000"| KongProxy["Kong Proxy"]
     Admin["DevSecOps Admin"] -->|"Port 8001"| KongAdmin["Kong Admin API"]
     
-    subgraph IsolatedNetwork["Kong Gateway & Zero Trust Security Enforcement"]
-        KongProxy --> GlobalSecurity{"Global Payload Size Control<br>(1MB Max Limit)"}
-        
-        GlobalSecurity -->|"Exceeded Limit"| Resp413["413 Payload Too Large"]
-        GlobalSecurity -->|"Pass"| PreFunction{"Service Pre-Function<br>Zero Trust Policy"}
+    subgraph IsolatedNetwork["Kong Gateway & Zero Trust Security Enforcement (Option B)"]
+        KongProxy --> Router{"Route Evaluation & Matching"}
 
-        PreFunction -->|"x-api-key Present & Invalid Key"| Resp401["401 Unauthorized"]
-        PreFunction -->|"x-api-key Present & Disallowed Endpoint"| Resp403["403 Forbidden"]
-        PreFunction -->|"x-api-key Present & Allowed Endpoint"| RouteAgent["Route 1: agent-route<br>(Headers: x-api-key ~.+)"]
-        PreFunction -->|"No x-api-key Header"| Router{"Route Evaluation & Matching"}
-
-        RouteAgent --> AgentAuth{"Key-Auth & ACL Enforcement<br>(allow: agent-group)"}
-        AgentAuth -->|"Pass (Rate Limit 20/min)"| JuiceShop
-        
         Router -->|"No Route Matched"| Resp404["404 Not Found"]
         
-        Router --> RouteGuest["Route 2: guest-route<br>(Rate Limit: 60/min)"]
-        Router --> RouteRegister["Route 3: guest-register-route<br>(POST-only, Rate Limit: 20/min)"]
-        Router --> RouteUser["Route 4: user-route<br>(Headers: Bearer JWT, Rate Limit 100/min)"]
-        Router --> RouteStatic["Route 5: static-route<br>(Catch-all SPA Assets)"]
-        
-        RouteGuest --> JuiceShop
-        RouteRegister --> JuiceShop
-        RouteUser --> JuiceShop
-        RouteStatic --> JuiceShop
+        Router --> RouteGuest["Route 1: guest-route<br>(Public Endpoints, Rate Limit: 60/min)"]
+        Router --> RouteRegister["Route 2: guest-register-route<br>(POST-only, Rate Limit: 20/min)"]
+        Router --> RouteUser["Route 3: user-route<br>(Headers: Bearer JWT, Rate Limit: 100/min)"]
+        Router --> RouteStatic["Route 4: static-route<br>(Catch-all SPA Assets)"]
+
+        RouteGuest --> ServicePipeline
+        RouteRegister --> ServicePipeline
+        RouteUser --> ServicePipeline
+        RouteStatic --> ServicePipeline
+
+        subgraph ServicePipeline["Service-Level Enforcement Pipeline (juice-shop-service)"]
+            PayloadControl{"Global Payload Size Control<br>(1MB Max Limit)"}
+            PayloadControl -->|"Exceeded Limit"| Resp413["413 Payload Too Large"]
+            PayloadControl -->|"Pass"| PreFunction{"Service Pre-Function<br>Zero Trust Policy"}
+
+            PreFunction -->|"x-api-key Present & Invalid Key"| Resp401["401 Unauthorized"]
+            PreFunction -->|"x-api-key Present & Disallowed Endpoint"| Resp403["403 Forbidden"]
+            PreFunction -->|"Pass"| KeyAuth{"Key-Auth Plugin<br>(anonymous: anonymous-user)"}
+
+            KeyAuth -->|"Valid x-api-key"| ConsAgent["Consumer: ai-agent"]
+            KeyAuth -->|"No x-api-key"| ConsGuest["Consumer: anonymous-user"]
+
+            ConsAgent --> ACL{"Service ACL Enforcement<br>(allow: agent-group, guest-group)"}
+            ConsGuest --> ACL
+
+            ACL --> RateEval{"Consumer-Scoped Rate Limiting"}
+            RateEval -->|"Consumer: ai-agent"| LimitAgent["Consumer Override Rate Limit: 20/min"]
+            RateEval -->|"Consumer: anonymous-user"| LimitGuest["Fallback to Route Rate Limit (e.g. 60/min)"]
+        end
+
+        LimitAgent --> JuiceShop
+        LimitGuest --> JuiceShop
     end
     
     JuiceShop["OWASP Juice Shop<br>(web:3000 - Internal Network Only)"]
@@ -51,24 +63,24 @@ sequenceDiagram
 
     Note over Agent, Kong: Kịch bản 1: AI Agent dùng API Key hợp lệ gọi Endpoint được phép
     Agent->>Kong: GET /api/Quantitys (Header: x-api-key: agent-secure-key-2026)
-    Note over Kong: Pre-Function xác thực Key hợp lệ -> agent-route -> ACL allow agent-group
+    Note over Kong: Router match guest-route -> Service Pre-Function hợp lệ -> Key-Auth identify consumer ai-agent -> Consumer Rate-Limit 20/min
     Kong->>Juice: Proxy Request sang Backend (Redacted API Key)
     Juice-->>Kong: HTTP 200 OK (Data)
     Kong-->>Agent: HTTP 200 OK (Data - Rate Limit: 20/min)
 
-    Note over Agent, Kong: Kịch bản 2: AI Agent dùng API Key cố tình truy cập Route khác (Vượt quyền)
+    Note over Agent, Kong: Kịch bản 2: AI Agent dùng API Key cố tình truy cập Route ngoài Scope (Vượt quyền)
     Agent->>Kong: GET /rest/admin/application-version (Header: x-api-key: agent-secure-key-2026)
-    Note over Kong: Pre-Function phát hiện Key hợp lệ nhưng Endpoint ngoài phạm vi được phép
+    Note over Kong: Router match guest-route -> Service Pre-Function phát hiện Key hợp lệ nhưng Endpoint ngoài phạm vi cho phép
     Kong-->>Agent: HTTP 403 Forbidden ("You cannot consume this service")
 
     Note over Agent, Kong: Kịch bản 3: Attacker truyền SAI API Key
     Agent->>Kong: GET /api/Quantitys (Header: x-api-key: fake-invalid-key)
-    Note over Kong: Pre-Function phát hiện API Key không khớp KONG_VAULT_ENV_AGENT_API_KEY
+    Note over Kong: Service Pre-Function phát hiện API Key không khớp secret môi trường
     Kong-->>Agent: HTTP 401 Unauthorized ("Invalid authentication credentials")
 
     Note over Client, Juice: Kịch bản 4: Khách / User truy cập trang Web công khai
     Client->>Kong: GET /rest/admin/application-version (No API Key)
-    Note over Kong: Pre-Function bỏ qua (No Key) -> Khớp guest-route -> Cho phép truy cập
+    Note over Kong: Pre-Function bỏ qua (No Key) -> Key-Auth gán anonymous-user -> Áp dụng Rate Limit của guest-route (60/min)
     Kong->>Juice: Proxy Request sang Backend
     Juice-->>Kong: HTTP 200 OK (Data / Application Version)
     Kong-->>Client: HTTP 200 OK (Data - Rate Limit: 60/min)
@@ -82,7 +94,8 @@ sequenceDiagram
 - Secret `KONG_VAULT_ENV_AGENT_API_KEY` được khai báo độc lập trong tệp `.env` (`agent-secure-key-2026`).
 - Khi container `sentinel-kong-gateway` khởi chạy, câu lệnh `command` trong `docker-compose.yml` thực thi thay thế biến môi trường động vào `/tmp/kong.yml` mà không lưu secret thô trong Git repository.
 
-### B. Cơ Chế Chặn Zero Trust (Pre-Function Policy)
+### B. Cơ Chế Chặn Zero Trust & Consumer-Scoped Rate Limiting (Option B Architecture)
 - **Kiểm soát API Key**: Nếu request chứa header `x-api-key` hoặc `apikey`, plugin `pre-function` ở cấp Service lập tức kiểm tra tính hợp lệ. Nếu key không khớp secret môi trường, Gateway từ chối ngay với **`401 Unauthorized`**.
-- **Phân quyền Endpoint (RBAC)**: Nếu Key hợp lệ, `pre-function` tiếp tục đối chiếu URI request với danh sách endpoint cho phép (`/api/Quantitys`, `/rest/products/search`, `/rest/user/login`). Nếu truy cập endpoint khác, Gateway từ chối ngay với **`403 Forbidden`**.
-- **Tính cô lập cho Guest**: Nếu request không có header `x-api-key`, hệ thống phục vụ người dùng khách vãng lai bình thường qua các route tương ứng (**`200 OK`**).
+- **Phân quyền Endpoint (RBAC Scope)**: Nếu Key hợp lệ, `pre-function` tiếp tục đối chiếu URI request với danh sách endpoint cho phép (`/api/Quantitys`, `/rest/products/search`, `/rest/user/login`). Nếu truy cập endpoint khác (ví dụ `/rest/admin/application-version`), Gateway từ chối ngay với **`403 Forbidden`**.
+- **Xác thực Consumer & Tránh Shadowing Route**: Sử dụng `key-auth` ở cấp Service với cấu hình `anonymous: anonymous-user`. Điều này giúp định danh chính xác Consumer `ai-agent` khi có API key hợp lệ, và tự động chuyển về `anonymous-user` khi không có key mà không gặp lỗi shadowing route trong thuật toán routing traditional của Kong.
+- **Giới hạn Tốc độ Dựa trên Consumer Identity**: Áp dụng plugin `rate-limiting` cho consumer `ai-agent` ở mức 20 requests/phút. Người dùng công khai (guest) không truyền API Key sẽ tuân theo rate limit mặc định của từng route (60 requests/phút đối với public endpoints và 20 requests/phút đối với registration anti-spam).
