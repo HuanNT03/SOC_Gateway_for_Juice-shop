@@ -23,8 +23,8 @@ services:
     image: kong:3.6.1
     container_name: sentinel-kong-gateway
     restart: always
-    # Boot-time entrypoint command: Resolves ${AGENT_API_KEY} dynamically into /tmp/kong.yml
-    command: /bin/sh -c "sed \"s/\\\$$\{AGENT_API_KEY\}/$${AGENT_API_KEY}/g\" /usr/local/kong/declarative/kong.yml > /tmp/kong.yml && exec /docker-entrypoint.sh kong docker-start"
+    # Boot-time entrypoint command: Renders /config/allowlist.json & ${AGENT_API_KEY} dynamically into /tmp/kong.yml
+    command: /bin/sh -c "luajit /usr/local/kong/declarative/render_config.lua && exec /docker-entrypoint.sh kong docker-start"
     environment:
       # DB-less Mode Configuration
       KONG_DATABASE: "off"
@@ -49,8 +49,10 @@ services:
       KONG_ADMIN_LISTEN: 0.0.0.0:8001
       KONG_PROXY_LISTEN: 0.0.0.0:8000
     volumes:
-      # Mount declarative configuration file
+      # Mount declarative configuration template, renderer script & allowlist JSON
       - ./gateway/kong.yml:/usr/local/kong/declarative/kong.yml:ro
+      - ./gateway/render_config.lua:/usr/local/kong/declarative/render_config.lua:ro
+      - ./config/allowlist.json:/usr/local/kong/declarative/allowlist.json:ro
     ports:
       # Port 8000: Kong Proxy (Public Entry Point)
       - "8000:8000"
