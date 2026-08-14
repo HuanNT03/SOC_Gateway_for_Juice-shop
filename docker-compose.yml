@@ -1,40 +1,34 @@
-# ==============================================================================
-# PROJECT SENTINEL - DOCKER COMPOSE ORCHESTRATION
-# Architecture: Kong API Gateway (Port 8000) + OWASP Juice Shop (Isolated Network)
-# ==============================================================================
+version: '3.8'
 
 services:
   # ----------------------------------------------------------------------------
-  # 1. OWASP JUICE SHOP WEB APPLICATION (ISOLATED BACKEND)
+  # OWASP JUICE SHOP (Vulnerable Target Web Application)
   # ----------------------------------------------------------------------------
   web:
-    image: bkimminich/juice-shop:v20.1.1
+    image: bkimminich/juice-shop:latest
     container_name: sentinel-juice-shop
-    restart: unless-stopped
-    # Port 3000 is intentionally NOT mapped to host to enforce 100% Gateway Isolation!
+    restart: always
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
+    ports:
+      # Port 3000 exposed for backend access
+      - "3000:3000"
     healthcheck:
-      # Health Check: Juice Shop v20.1.1 is a DISTROLESS image (no /bin/sh, wget, curl)
-      # Must use CMD form (not CMD-SHELL) with Node.js binary directly
-      # Node.js http.get checks if server responds with HTTP 200 on root path
-      test: ["CMD", "/nodejs/bin/node", "-e", "require('http').get('http://localhost:3000/', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
-      interval: 15s    # Check every 15 seconds
-      timeout: 5s      # Maximum wait time per health check attempt
-      retries: 5       # Mark unhealthy after 5 consecutive failures
-      start_period: 45s  # Grace period for Juice Shop SQLite database initialization
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
-      - sentinel-network
+      - sentinel-net
 
   # ----------------------------------------------------------------------------
-  # 2. KONG API GATEWAY (DB-LESS DECLARATIVE MODE)
+  # KONG API GATEWAY (Declarative DB-less Mode)
   # ----------------------------------------------------------------------------
   gateway:
-    image: kong:3.6
+    image: kong:3.6.1
     container_name: sentinel-kong-gateway
-    restart: unless-stopped
-    env_file:
-      - .env
+    restart: always
+    # Boot-time entrypoint command: Resolves ${AGENT_API_KEY} dynamically into /tmp/kong.yml
     command: /bin/sh -c "sed \"s/\\\$$\{AGENT_API_KEY\}/$${AGENT_API_KEY}/g\" /usr/local/kong/declarative/kong.yml > /tmp/kong.yml && exec /docker-entrypoint.sh kong docker-start"
     environment:
       # DB-less Mode Configuration
@@ -49,7 +43,9 @@ services:
       KONG_DNS_ORDER: "A,CNAME"
       # Enable Environment Variable Substitution in DB-less Declarative Config
       KONG_DECLARATIVE_CONFIG_ENV_SUBST: "on"
-      AGENT_API_KEY: ${AGENT_API_KEY:-sentinel-agent-secure-key-2026}
+      # AI Security Agent API Key Secret (Read dynamically from KONG_VAULT_ENV_AGENT_API_KEY in .env)
+      KONG_VAULT_ENV_AGENT_API_KEY: ${KONG_VAULT_ENV_AGENT_API_KEY:-sentinel-agent-secure-key-2026}
+      AGENT_API_KEY: ${KONG_VAULT_ENV_AGENT_API_KEY:-sentinel-agent-secure-key-2026}
       # Standard Logging & Listening Ports
       KONG_PROXY_ACCESS_LOG: /dev/stdout
       KONG_ADMIN_ACCESS_LOG: /dev/stdout
@@ -66,11 +62,11 @@ services:
       # Port 8001: Kong Admin API (DevSecOps Management)
       - "8001:8001"
     depends_on:
-      - web
+      web:
+        condition: service_healthy
     networks:
-      - sentinel-network
+      - sentinel-net
 
 networks:
-  sentinel-network:
-    name: sentinel-network
+  sentinel-net:
     driver: bridge
