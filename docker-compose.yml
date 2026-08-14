@@ -49,10 +49,7 @@ services:
       KONG_DNS_ORDER: "A,CNAME"
       # Enable Environment Variable Substitution in DB-less Declarative Config
       KONG_DECLARATIVE_CONFIG_ENV_SUBST: "on"
-      AGENT_API_KEY: ${AGENT_API_KEY}
-      # Kong Vault Environment Variables Resolution
-      KONG_VAULT_ENV_PREFIX: ${KONG_VAULT_ENV_PREFIX}
-      KONG_VAULT_ENV_AGENT_API_KEY: ${KONG_VAULT_ENV_AGENT_API_KEY}
+      AGENT_API_KEY: ${AGENT_API_KEY:-sentinel-agent-secure-key-2026}
       # Standard Logging & Listening Ports
       KONG_PROXY_ACCESS_LOG: /dev/stdout
       KONG_ADMIN_ACCESS_LOG: /dev/stdout
