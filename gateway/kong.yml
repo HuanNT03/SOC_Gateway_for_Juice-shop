@@ -65,8 +65,8 @@ services:
     # --------------------------------------------------------------------------
     routes:
       # ------------------------------------------------------------------------
-      # Route 1: AI Security Agent Allowed Route
-      # Purpose: Dedicated route for AI Agent scanner requests containing x-api-key
+      # Route 1: AI Security Agent Allowed Route (Highest Priority Match)
+      # Purpose: Dedicated route for AI Agent scanner requests
       # ------------------------------------------------------------------------
       - name: agent-route
         paths:
@@ -77,9 +77,6 @@ services:
           - GET
           - POST
           - OPTIONS
-        headers:
-          x-api-key:
-            - "~.+"  # Matches requests containing x-api-key header
         strip_path: false
         plugins:
           # Strict Key-Auth Plugin: Authenticates consumer ai-agent
@@ -106,7 +103,6 @@ services:
       # ------------------------------------------------------------------------
       - name: guest-route
         paths:
-          - /api/Quantitys
           - /rest/products/search
           - /rest/admin/application-version
           - /rest/user/login
