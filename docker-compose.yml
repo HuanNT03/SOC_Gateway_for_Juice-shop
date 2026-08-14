@@ -13,11 +13,6 @@ services:
     ports:
       # Port 3000 exposed for backend access
       - "3000:3000"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - sentinel-net
 
@@ -62,8 +57,7 @@ services:
       # Port 8001: Kong Admin API (DevSecOps Management)
       - "8001:8001"
     depends_on:
-      web:
-        condition: service_healthy
+      - web
     networks:
       - sentinel-net
 
