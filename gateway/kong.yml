@@ -48,12 +48,9 @@ services:
                   return kong.response.exit(401, { message = "Invalid authentication credentials" })
                 end
 
-                local path = kong.request.get_path()
-                local allowed_paths = {
-                  ["/api/Quantitys"] = true,
-                  ["/rest/products/search"] = true,
-                  ["/rest/user/login"] = true
-                }
+                -- Dynamic Allowlist Lookup Table: Injected at boot-time from config/allowlist.json via ${ALLOWED_PATHS_LUA}
+                -- Structure: ["/path1"] = true, ["/path2"] = true
+                local allowed_paths = { ${ALLOWED_PATHS_LUA} }
 
                 if not allowed_paths[path] then
                   return kong.response.exit(403, { message = "You cannot consume this service" })
