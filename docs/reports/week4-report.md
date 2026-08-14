@@ -4,10 +4,15 @@
 
 ```mermaid
 flowchart TD
-    Client["External Clients / AI Agent / Tester"] -->|"Port 8000"| KongProxy["Kong Proxy"]
-    Admin["DevSecOps Admin"] -->|"Port 8001"| KongAdmin["Kong Admin API"]
+    ClientExt["External Client / AI Agent / Attacker"]
+    AdminExt["DevSecOps Admin"]
+
+    AdminExt -->|"Admin API (Port 8001)"| KongAdmin["Kong Admin API"]
     
-    subgraph IsolatedNetwork["Kong Gateway & Zero Trust Security Enforcement (Option B)"]
+    ClientExt -->|"Proxy Access (Port 8000)"| KongProxy["Kong API Gateway Proxy"]
+    ClientExt -.->|"Direct Access Port 3000 (Blocked)"| DirectBlock["❌ Blocked / Restricted<br>(Direct Upstream Access Forbidden)"]
+
+    subgraph SentinelNet["Isolated Docker Bridge Network (sentinel-net)"]
         KongProxy --> Router{"Route Evaluation & Matching"}
 
         Router -->|"No Route Matched"| Resp404["404 Not Found"]
@@ -44,10 +49,14 @@ flowchart TD
 
         LimitAgent --> JuiceShop
         LimitGuest --> JuiceShop
+        
+        JuiceShop["OWASP Juice Shop Backend<br>(web:3000 - Internal Service Only)"]
     end
-    
-    JuiceShop["OWASP Juice Shop<br>(web:3000 - Internal Network Only)"]
 ```
+
+> **Lưu ý về Nguyên tắc Cô lập Mạng (Network Isolation)**:
+> - **Cổng 8000 (Kong Proxy)** là điểm đầu vào duy nhất (**Single Entrypoint**) cho mọi lưu lượng từ bên ngoài.
+> - **Cổng 3000 (Juice Shop)** nằm trong mạng nội bộ `sentinel-net`. Trong mô hình sản xuất DevSecOps, các yêu cầu truy cập trực tiếp cổng 3000 (không qua Gateway 8000) đều bị chặn để đảm bảo mọi request phải qua bộ lọc Zero Trust.
 
 ---
 
