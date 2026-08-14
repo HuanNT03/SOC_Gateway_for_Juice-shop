@@ -99,8 +99,6 @@ sequenceDiagram
 
 ## 3. Nội Dung Báo Cáo Tóm Tắt & Quy Trình Triển Khai
 
-## 3. Nội Dung Báo Cáo Tóm Tắt & Quy Trình Triển Khai
-
 ### 3.1 🎯 Ứng Dụng Mẫu & Môi Trường Thử Nghiệm
 - **Backend Application**: Sử dụng OWASP Juice Shop (Docker Image: `bkimminich/juice-shop:latest`).
 - **Network Isolation Policy**: Chạy trong Docker Bridge Network `sentinel-net`. Cổng 3000 **không được expose ra ngoài Host** (Internal Service Only) nhằm đảm bảo 100% lưu lượng bắt buộc phải đi qua API Gateway.
@@ -118,7 +116,7 @@ sequenceDiagram
 
 | Tên Route | Danh sách Paths | Phương Thức (Methods) | Phân Quyền & Nhận Diện | Giới Hạn Tốc Độ (Rate Limit) |
 |---|---|---|---|---|
-| **`guest-route`** | `/api/Quantitys`, `/rest/products/search`, `/rest/admin/application-version`, `/rest/user/login`, `/rest/user/reset-password` | `GET`, `POST`, `OPTIONS` | Công khai (Guest / User / Agent) | 60 requests/phút |
+| **`guest-route`** | `/api/Quantitys`, `/rest/products/search`, `/rest/admin/application-version`, `/rest/user/login`, `/rest/user/reset-password` | `GET`, `POST`, `OPTIONS` | Công khai (Guest / User) | 60 requests/phút |
 | **`guest-register-route`** | `/api/Users`, `/api/SecurityAnswers` | `POST`, `OPTIONS` | Đăng ký tài khoản (Tách riêng để giới hạn method) | 20 requests/phút (Anti-Spam) |
 | **`user-route`** | `/rest/basket`, `/api/BasketItems`, `/rest/user/whoami`, `/profile/image/file`, `/rest/order-history` | `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS` | Đã đăng nhập (Yêu cầu Header `Authorization: Bearer <JWT>`) | 100 requests/phút |
 | **`static-route`** | `/` (Catch-all) | `GET`, `POST`, `HEAD`, `OPTIONS` | Nạp giao diện web SPA (HTML/CSS/JS) | Theo Route |
