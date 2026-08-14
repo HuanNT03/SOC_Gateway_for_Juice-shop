@@ -191,6 +191,7 @@ services:
           - /
         methods:
           - GET
+          - POST
           - HEAD
           - OPTIONS
         strip_path: false
