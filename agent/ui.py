@@ -94,12 +94,9 @@ def render_ui():
 
         if "selected_prompt" not in st.session_state:
             st.session_state["selected_prompt"] = "Hãy kiểm tra rate limit của endpoint /api/Quantitys với 30 request"
-        if "auto_run" not in st.session_state:
-            st.session_state["auto_run"] = False
 
         def _select_preset(text: str):
             st.session_state["selected_prompt"] = text
-            st.session_state["auto_run"] = True
 
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -116,9 +113,7 @@ def render_ui():
             value=st.session_state["selected_prompt"]
         )
 
-        should_run = st.button("🚀 Thực Thi Lệnh Agent", type="primary") or st.session_state["auto_run"]
-        if st.session_state["auto_run"]:
-            st.session_state["auto_run"] = False
+        should_run = st.button("🚀 Thực Thi Lệnh Agent", type="primary")
 
         if should_run:
             with st.spinner("Agent đang phân tích kịch bản và gửi request qua Gateway..."):

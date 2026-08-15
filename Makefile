@@ -47,7 +47,7 @@ help: ## Hiển thị menu hướng dẫn các lệnh trong Makefile
 
 up: ## Khởi chạy toàn bộ hạ tầng (Juice Shop + Kong Gateway + Streamlit Agent UI)
 	@echo "$(CYAN)[+] Đang khởi chạy hạ tầng Kong Gateway, Juice Shop và Agent UI...$(RESET)"
-	docker compose -f $(COMPOSE_FILE) up -d
+	docker compose -f $(COMPOSE_FILE) up -d --build
 	@echo "$(GREEN)[✔] Hạ tầng đã khởi chạy thành công!$(RESET)"
 	@echo "$(GREEN)[✔] Kong Proxy Access:     http://localhost:8000$(RESET)"
 	@echo "$(GREEN)[✔] Kong Admin API:        http://localhost:8001$(RESET)"

@@ -311,8 +311,11 @@ def run_agent_session(user_prompt: str) -> str:
     """Luồng xử lý hoàn chỉnh một phiên làm việc của Agent khi nhận lệnh từ Người dùng."""
     proposal = generate_proposal(user_prompt)
 
-    engine_tag = f"LLM ({proposal.get('model', AI_AGENT_MODEL)})" if proposal.get("used_llm") else "Rule-based Engine"
+    engine_tag = f"LLM ({proposal.get('model', AI_AGENT_MODEL)})" if proposal.get("used_llm") else "Rule-based Engine Fallback"
     print(f"\n🤖 [AGENT THINKING - {engine_tag}] Phân tích yêu cầu: '{user_prompt}'")
+    if not proposal.get("used_llm"):
+        raw_err = proposal.get("fallback_reason") or "AI_AGENT_API_KEY chưa được khai báo trong .env"
+        print(f"⚠️ [LLM FALLBACK REASON] {raw_err}")
     print(f"💡 [AGENT PROPOSAL] {proposal['explanation']}")
     print(f"   Target: {proposal['method']} {proposal['url']} | Payload Category: {proposal['payload_category']}")
 

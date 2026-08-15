@@ -80,6 +80,9 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./config:/app/config
+      - ./agent:/app/agent
+      - ./tools:/app/tools
+      - ./.env:/app/.env:ro
     depends_on:
       - gateway
     networks:
