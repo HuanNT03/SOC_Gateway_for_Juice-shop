@@ -137,4 +137,28 @@ python3 agent/agent.py "<CÂU_LỆNH_KIỂM_THỬ>"
    python3 agent/agent.py "Thử chèn ký tự đặc biệt vào search endpoint"
    ```
 
+---
+
+## 🖥️ 6. Giao Diện Web UI (Streamlit Dashboard)
+
+Giao diện trực quan dựa trên Streamlit cho phép người dùng điều khiển Trợ lý AI Security Agent, thực hiện các kịch bản test thủ công và soi nhật ký Audit Log thời gian thực.
+
+### Cú pháp khởi chạy:
+
+```bash
+streamlit run agent/ui.py
+```
+Sau khi chạy, ứng dụng tự động mở giao diện tại địa chỉ: `http://localhost:8501`.
+
+---
+
+## 🧪 7. Kiểm Thử Độc Lập Unit Test Suite
+
+Toàn bộ các test case được đặt tập trung tại thư mục `tests/`:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+
 
