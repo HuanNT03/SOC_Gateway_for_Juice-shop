@@ -103,3 +103,38 @@ Hệ thống cung cấp danh sách các nhóm payload kiểm thử an toàn (ben
 - Chống Prompt Injection từ HTTP Response body.
 - **Mindset Guardrails**: Định hướng AI Agent coi các mã **`413`**, **`429`**, **`403`** là **thành công của hệ thống phòng thủ**, không tự ý retry.
 
+---
+
+## 🤖 5. Hướng Dẫn Sử Dụng AI Security Agent (`agent/agent.py`)
+
+AI Security Agent nhận lệnh bằng ngôn ngữ tự nhiên từ người dùng, tự động tra cứu payload an toàn từ `config/payloads.json`, thực thi qua `safe_requester.py` và xuất báo cáo an ninh.
+
+### Cú pháp chạy trực tiếp:
+
+```bash
+python3 agent/agent.py "<CÂU_LỆNH_KIỂM_THỬ>"
+```
+
+### 💡 Các ví dụ lệnh mẫu:
+
+1. **Kiểm thử Rate Limit**:
+   ```bash
+   python3 agent/agent.py "Hãy kiểm tra rate limit của endpoint /api/Quantitys"
+   ```
+
+2. **Kiểm thử Endpoint bị cấm (403 Forbidden)**:
+   ```bash
+   python3 agent/agent.py "Thử truy cập vào endpoint admin /rest/admin/application-version"
+   ```
+
+3. **Kiểm thử Payload ngoại cỡ (413 Payload Too Large)**:
+   ```bash
+   python3 agent/agent.py "Gửi file lớn hoặc oversized payload để test gateway"
+   ```
+
+4. **Kiểm thử Ký tự đặc biệt (XSS/Injection Probe)**:
+   ```bash
+   python3 agent/agent.py "Thử chèn ký tự đặc biệt vào search endpoint"
+   ```
+
+
