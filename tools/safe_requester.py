@@ -33,6 +33,10 @@ import time
 import argparse
 import requests
 from typing import Any, Dict, Optional
+from dotenv import load_dotenv
+
+# Tự động nạp cấu hình môi trường từ .env
+load_dotenv()
 
 # Nạp module logger và redactor từ thư mục local
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
@@ -210,8 +214,8 @@ def send_request(
     target_url = _resolve_url(url)
     req_headers = dict(headers) if headers is not None else {}
     
-    # 3. Tự động tiêm API Key từ môi trường (không hardcode secret)
-    api_key = os.getenv("AGENT_API_KEY") or os.getenv("KONG_VAULT_ENV_AGENT_API_KEY", "")
+    # 3. Tự động tiêm API Key từ môi trường (hoặc fallback mặc định)
+    api_key = os.getenv("AGENT_API_KEY") or os.getenv("KONG_VAULT_ENV_AGENT_API_KEY") or "sentinel-agent-secure-key-2026"
     if "x-api-key" not in [k.lower() for k in req_headers.keys()]:
         req_headers["x-api-key"] = api_key
 
