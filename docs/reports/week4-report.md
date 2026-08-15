@@ -147,68 +147,65 @@ sequenceDiagram
    - *Trả lời*: Mã nguồn Lua trong `pre-function` kiểm tra `if key and key ~= "" then`. Nếu truyền `""`, Gateway sẽ xử lý như một request không có key (đưa về nhóm Guest) thay vì báo 401 Unauthorized.
 
 
-# Python Tool gửi request qua Gateway
+### 3.6 🛠️ Công Cụ Python Tool Gửi Request An Toàn (`safe_requester.py`)
 
-Có đính kèm api-key để agent không truy cập trái phép vào các route không cấp phép cho agent.
+- **Quản lý Quyền Truy Cập (API Key)**: Tự động đính kèm header `x-api-key` lấy từ môi trường (`AGENT_API_KEY`) để Agent không thể truy cập trái phép vào các route ngoài scope cấp phép.
+- **Giới Hạn Thời Gian Chờ (Timeout Protection)**:
+  - Thiết lập `timeout = 7` (7 giây) cho tất cả các yêu cầu HTTP.
+  - *Lý do*: Kong Gateway được cấu hình `connect_timeout` & `read_timeout` là 5 giây (5000ms). Việc đặt timeout ở Tool là 7 giây tạo ra khoảng đệm 2 giây, giúp Tool hứng trọn vẹn thông báo lỗi `504 Gateway Timeout` từ Kong nếu backend Juice Shop bị treo, thay vì Tool tự ngắt kết nối (`ReadTimeout`) làm sai lệch nguyên nhân thực sự.
+- **Giới Hạn Kích Thước Response (Response Size Control)**:
+  - Sử dụng tham số `stream=True` trong thư viện `requests` để không nạp toàn bộ response body vào RAM cùng một lúc.
+  - Đọc dữ liệu theo luồng `response.iter_content(chunk_size=2048)`, chỉ giữ lại tối đa 2048 bytes (2KB) đầu tiên.
+- **Kiểm Soát Phương Thức HTTP (HTTP Method Policy)**:
+  - Chỉ cho phép các phương thức `GET`, `POST`, `OPTIONS`. 
+  - Nếu truyền phương thức khác (`DELETE`, `PUT`, `PATCH`), Tool sẽ từ chối ngay tại lớp Python và trả về thông báo lỗi HTTP 405 (Method Not Allowed).
+- **Hàm Thực Thi Chuẩn**: Định nghĩa hàm `send_request(url, method="GET", headers=None, payload=None)`.
+- **Bảo Vệ Dữ Liệu Nhạy Cảm (Redaction)**:
+  - Tự động mờ hóa (redact) các trường nhạy cảm: `x-api-key`, `apikey`, `authorization`, `password`, `token`, `secret`, `set-cookie`, `cookie`.
+  - Gọi hàm `mask_sensitive_data()` **1 lần duy nhất** trên toàn bộ dữ liệu (headers + body). Kết quả được dùng chung cho cả việc ghi log và trả về cho caller, đảm bảo không rò rỉ dữ liệu nhạy cảm.
+- **Xử Lý Payload Ngoại Cỡ (Oversized Payload)**:
+  - Khi nhận `payload_category: "oversized_payload"`, Tool tự động sinh chuỗi `"A" * 1_500_000` (~1.5MB) trong RAM cục bộ Python và gửi POST request tới Gateway để thử nghiệm kịch bản `413 Payload Too Large`.
 
-Giới hạn thời gian chờ (Timeout): 
+---
 
-Thiết lập `timeout=7` (7 giây) cho tất cả cuộc gọi HTTP của Tool. Lý do chọn 7 giây: Kong Gateway cấu hình connect_timeout & read_timeout là 5 giây (5000ms). Việc đặt `timeout=7` tạo ra khoảng đệm an toàn 2 giây, giúp Tool đủ kiên nhẫn hứng trọn vẹn thông báo lỗi 504 Gateway Timeout chuẩn từ Kong nếu backend Juice Shop bị treo, thay vì Tool tự ném lỗi ReadTimeout ngắt kết nối cục bộ làm mù mờ nguyên nhân thực sự.
+### 3.7 🤖 AI Security Agent Kiểm Thử Request & Guardrails
 
-Giới hạn kích thước response (Response Size):
+- **Xử Lý Ngôn Ngữ Tự Nhiên**: Nhận yêu cầu kiểm thử từ người dùng dạng văn bản (VD: *"Kiểm tra rate limit của endpoint /api/Quantitys"*, *"Thử XSS trên search endpoint"*).
+- **Đề Xuất Payload An Toàn**: Agent đọc `config/payloads.json` để xác định nhóm `payload_category` phù hợp và gợi ý các giá trị `payload_value` an toàn.
+- **Xác Nhận Trước Khi Chạy**: Hiển thị đầy đủ kịch bản đề xuất (Endpoint, Method, Payload) cho người dùng xác nhận trước khi thực hiện.
+- **Phân Tích Báo Cáo Phản Hồi**: Agent gọi `safe_requester.py`, nhận kết quả đã masked, phân tích status code và đưa ra nhận xét theo **Mindset Guardrails** (xác nhận các mã `413`, `429`, `403` là bằng chứng Gateway hoạt động đúng thiết kế).
 
-- Sử dụng tham số `stream=True` trong `requests` để không tải toàn bộ response body vào RAM cùng một lúc.
-- **Sử dụng `response.iter_content(chunk_size=2048)`**
+---
 
-Có chức năng log request/response ra log.
+### 3.8 📜 Quy Trình & Cấu Trúc Nhật Ký (Audit Log)
 
-Chỉ cho phép `GET`, `POST`, `OPTIONS`. Nếu truyền method khác (như `DELETE`, `PUT`, `PATCH`), từ chối ngay ở cấp Tool và trả về JSON lỗi
+- **Bộ Lọc Redact Đệ Quy (`mask_sensitive_data`)**:
+  - Đối với `dict`: Duyệt từng cặp key/value. Nếu key thuộc danh sách nhạy cảm $\rightarrow$ thay bằng giá trị `[REDACTED_*]`. Nếu value là `dict` hoặc `list` $\rightarrow$ thực hiện gọi đệ quy.
+  - Đối với `list`: Duyệt từng phần tử và áp dụng đệ quy cho từng phần tử.
+  - Đối với `str`: Sử dụng Regex quét và che các chuỗi dạng JWT (3 phần) và Email.
+- **Cấu Trúc Nhật Ký Audit (`logs/gateway_audit.jsonl`)**:
+  ```json
+  {
+    "timestamp": "2026-08-15T10:00:00.000Z",
+    "endpoint": "/api/Quantitys",
+    "method": "GET",
+    "status_code": 200,
+    "request_headers": {
+      "x-api-key": "[REDACTED_SECRET]"
+    },
+    "response_headers": {
+      "Set-Cookie": "[REDACTED_SECRET]"
+    },
+    "response_body_snippet": "Tối đa 2048 bytes nội dung (đã được làm sạch)",
+    "duration_ms": 45.2
+  }
+  ```
 
-Định nghĩa hàm send_request(url, method="GET", headers=None, payload=None).
+---
 
-Cần redact các thông tin nhạy cảm như `x-api-key`, `apikey`, `authorization`, `password`, `token`, `secret`, `set-cookie`, `cookie` .
+## 4. Các Vấn Đề Tồn Đọng & Định Hướng Phát Triển
 
-Gọi `mask_sensitive_data()` **1 lần duy nhất** trên toàn bộ dữ liệu (headers + body). Sử dụng kết quả cho cả ghi log lẫn trả về caller → đảm bảo không có đường nào dữ liệu nhạy cảm thoát ra ngoài.
-
-Khi nhận `payload_category: "oversized_payload"`, Tool tự sinh chuỗi `"A" * 1_500_000` (~1.5MB) trong RAM cục bộ Python và gửi request POST tới Gateway.
-
-# Agent kiểm tra request
-
-Phải đảm bảo có trường hợp test payload > 1MB
-
-Nhận yêu cầu kiểm thử từ người dùng dạng text (VD: "Kiểm tra rate limit của endpoint /api/Quantitys", "Thử XSS trên search endpoint").
-
-Agent đọc `config/payloads.json` để biết danh sách các nhóm payload khả dụng.
-
-Hiển thị đề xuất cho người dùng xác nhận trước khi thực hiện.
-
-Agent gọi Tool `safe_requester.py`  và nhận kết quả đã masked từ Tool (response đã qua `mask_sensitive_data()`). Phân tích status code và đưa ra nhận xét.
-
-# Nhật ký request và response
-
-Xây dựng bộ lọc Redact đệ quy, hàm `mask_sensitive_data(data)` để quét được nested JSON (dict lồng dict, list chứa dict):
-
-- Nếu `data` là `dict`: duyệt từng key/value. Nếu key khớp danh sách nhạy cảm → mask giá trị. Nếu value là `dict` hoặc `list` → gọi đệ quy.
-- Nếu `data` là `list`: duyệt từng phần tử, gọi đệ quy cho mỗi phần tử.
-- Nếu `data` là `str`: chạy regex quét JWT thuần và email.
-
-Mỗi dòng log ghi nhận đầy đủ các thông tin Audit:
-
-```json
-{
-	"timestamp": "Thời gian thực hiện request theo chuẩn ISO8601 UTC."
-	"endpoint": "URL path truy vấn."
-	"method": "Phương thức HTTP (GET, POST, OPTIONS)."
-	"status_code": "Mã phản hồi HTTP từ Gateway/Juice Shop (VD: 200, 401, 403, 413, 429)."
-	"request_headers": "Request Headers sau khi đã đi qua hàm mask_sensitive_data."
-	"response_headers": "Response Headers sau khi đã đi qua hàm mask_sensitive_data (che giấu Set-Cookie session token và thông tin hạ tầng)."
-	"response_body_snippet": "Tối đa 2048 bytes nội dung phản hồi đã được làm sạch."
-	"duration_ms": "Thời gian xử lý request (tính theo milisec)."
-}
-```
-
-## Vấn đề tồn đọng
-
-Việc cắt response ở mốc 2KB trước khi mask có thể làm lộ một phần chuỗi bí mật nếu điểm cắt rơi giữa JWT/email, đây là đánh đổi giữa chống zip-bomb và độ chính xác của redaction.
-
-Trong các tuần sau khi agent chỉ để xuất request thì có thể để `oversized_payload` như 1 dạng tham số trong hàm send_request dạng boolean để người dùng dễ sử dụng.
+1. **Đánh đổi giữa giới hạn kích thước Response và độ chính xác Redaction**:
+   - Việc cắt response ở mốc 2KB trước khi mờ hóa (mask) có thể vô tình làm đứt ngang chuỗi bí mật (như JWT hoặc Email) ngay tại ranh giới 2048 bytes, khiến Regex không khớp trọn vẹn. Đây là sự đánh đổi cần thiết để chống tấn công cạn kệt bộ nhớ (Zip-bomb / DoS).
+2. **Cải tiến tham số `oversized_payload`**:
+   - Trong các giai đoạn phát triển tiếp theo, khi Agent chỉ đề xuất request, tham số `oversized_payload` có thể chuyển thành dạng tham số boolean trong hàm `send_request` để người dùng dễ dàng tùy chọn sử dụng.
