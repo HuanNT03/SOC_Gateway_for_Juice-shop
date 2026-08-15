@@ -112,10 +112,10 @@ def render_ui():
 
         if st.button("🚀 Thực Thi Lệnh Agent", type="primary"):
             with st.spinner("Agent đang phân tích kịch bản và gửi request qua Gateway..."):
-                scenario_key = analyze_user_request(user_input)
-                proposal = generate_proposal(scenario_key)
+                proposal = generate_proposal(user_input)
 
-                st.info(f"**Kịch bản đề xuất**: {proposal['scenario_name']}\n\n**Chi tiết**: {proposal['explanation']}")
+                engine_name = f"🤖 LLM Agent ({proposal.get('model', 'Qwen')})" if proposal.get("used_llm") else "⚙️ Rule-based Engine"
+                st.info(f"**Engine**: {engine_name}\n\n**Kịch bản đề xuất**: {proposal['scenario_name']}\n\n**Chi tiết**: {proposal['explanation']}")
                 
                 result = execute_proposal(proposal)
                 report = format_agent_report(result)

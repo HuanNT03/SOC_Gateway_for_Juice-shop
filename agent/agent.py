@@ -1,41 +1,53 @@
 """
 Project Sentinel - DevSecOps & AI Gateway
-Module: AI Security Analysis Agent (agent/agent.py)
+Module: Real AI Security Analysis Agent (agent/agent.py)
 
 Mục đích:
-    Nhận yêu cầu kiểm thử bằng ngôn ngữ tự nhiên từ người dùng, phân tích kịch bản,
-    đọc config/payloads.json để đề xuất các tham số kiểm thử an toàn, gọi safe_requester.py
-    thực thi request qua Kong Gateway và tổng hợp báo cáo an ninh theo System Prompt & Mindset Guardrails.
+    Xây dựng AI Security Agent thực sự sử dụng OpenAI SDK (tương thích với Alibaba Cloud Qwen / DashScope API).
+    - Nạp cấu hình API Key và Endpoint linh hoạt từ môi trường (`.env`).
+    - Sử dụng mô hình LLM để hiểu câu lệnh tự nhiên của người dùng và thực hiện Tool Calling (Function Calling).
+    - Hoạt động dựa trên System Prompt & Mindset Guardrails (chống Prompt Injection, nhận diện 413/429/403 là thành công của Gateway).
+    - Tự động chuyển sang chế độ dự phòng (Rule-based Fallback) khi không có API Key để đảm bảo tính sẵn sàng và chạy test offline.
 
 Đầu vào (Inputs):
-    user_prompt (str): Lệnh kiểm thử bằng văn bản tự do của người dùng.
+    user_prompt (str): Yêu cầu kiểm thử bằng ngôn ngữ tự nhiên.
 
 Đầu ra (Outputs):
-    dict: Kết quả đề xuất, phản hồi HTTP và báo cáo đánh giá an ninh.
-
-Xử lý Edge Cases:
-    - Nhận diện các mã 413, 429, 403 là "GATEWAY HOẠT ĐỘNG ĐÚNG THIẾT KẾ" (không coi là thất bại).
-    - Giới hạn payload chọn từ config/payloads.json, không tự sinh payload phá hoại.
+    dict/str: Kịch bản đề xuất, kết quả thực thi và báo cáo đánh giá an ninh.
 """
 
 import sys
 import os
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+from dotenv import load_dotenv
+
+# Nạp các biến môi trường từ tệp .env
+load_dotenv()
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from tools.safe_requester import send_request, burst_test, resolve_safe_payload, load_payloads_dict
+from tools.safe_requester import send_request, burst_test, resolve_safe_payload, load_payloads_dict, TOOL_SCHEMA
+
+# Đọc cấu hình LLM từ môi trường
+AI_AGENT_API_KEY = os.getenv("AI_AGENT_API_KEY", "").strip()
+AI_AGENT_BASE_URL = os.getenv("AI_AGENT_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").strip()
+AI_AGENT_MODEL = os.getenv("AI_AGENT_MODEL", "qwen-plus").strip()
+
+SYSTEM_PROMPT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "system_prompt.txt"))
+
+def _load_system_prompt() -> str:
+    """Tải nội dung System Prompt và Guardrails từ tệp system_prompt.txt."""
+    if os.path.exists(SYSTEM_PROMPT_PATH):
+        try:
+            with open(SYSTEM_PROMPT_PATH, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception:
+            pass
+    return "Bạn là AI Security Agent chuyên kiểm thử an ninh API Gateway."
 
 
 def analyze_user_request(user_prompt: str) -> str:
-    """Phân tích văn bản yêu cầu của người dùng để xác định kịch bản kiểm thử phù hợp.
-
-    Inputs:
-        user_prompt (str): Câu lệnh từ người dùng.
-
-    Outputs:
-        str: Mã kịch bản ("rate_limit", "forbidden_endpoint", "oversized_payload", "special_chars", "general_check").
-    """
+    """Phân tích văn bản yêu cầu để xác định kịch bản kiểm thử (Hỗ trợ LLM & Rule-based fallback)."""
     if not user_prompt or not isinstance(user_prompt, str):
         return "general_check"
 
@@ -53,15 +65,81 @@ def analyze_user_request(user_prompt: str) -> str:
     return "general_check"
 
 
-def generate_proposal(scenario_key: str) -> Dict[str, Any]:
-    """Đọc config/payloads.json và tạo đề xuất kịch bản kiểm thử chi tiết.
+def generate_proposal_llm(user_prompt: str) -> Optional[Dict[str, Any]]:
+    """Sử dụng OpenAI SDK (tương thích Alibaba Cloud Qwen API) để phân tích câu lệnh và đề xuất Tool Calling."""
+    if not AI_AGENT_API_KEY:
+        return None
 
-    Inputs:
-        scenario_key (str): Mã kịch bản đã phân tích.
+    try:
+        from openai import OpenAI
+        client = OpenAI(
+            api_key=AI_AGENT_API_KEY,
+            base_url=AI_AGENT_BASE_URL
+        )
 
-    Outputs:
-        dict: Đề xuất kịch bản bao gồm url, method, payload_category, payload_value, count và giải thích.
-    """
+        system_prompt = _load_system_prompt()
+        payloads_summary = json.dumps(load_payloads_dict(), ensure_ascii=False)
+
+        messages = [
+            {"role": "system", "content": f"{system_prompt}\n\nDanh sách Payloads an toàn khả dụng:\n{payloads_summary}"},
+            {"role": "user", "content": f"Hãy đề xuất kịch bản kiểm thử cho yêu cầu sau: {user_prompt}"}
+        ]
+
+        tools_spec = [
+            {
+                "type": "function",
+                "function": TOOL_SCHEMA
+            }
+        ]
+
+        response = client.chat.completions.create(
+            model=AI_AGENT_MODEL,
+            messages=messages,
+            tools=tools_spec,
+            tool_choice="auto",
+            temperature=0.1
+        )
+
+        message = response.choices[0].message
+        if message.tool_calls:
+            tool_call = message.tool_calls[0]
+            args = json.loads(tool_call.function.arguments)
+            
+            url = args.get("url", "/api/Quantitys")
+            method = args.get("method", "GET")
+            category = args.get("payload_category", "long_string")
+            value = args.get("payload_value", None)
+
+            # Tự động tính số lượng request nếu liên quan đến rate limit
+            count = 25 if "rate" in user_prompt.lower() or category == "rate_limit" else 1
+
+            return {
+                "scenario_name": f"LLM Proposed: {category} on {method} {url}",
+                "url": url,
+                "method": method,
+                "count": count,
+                "payload_category": category,
+                "payload_value": value,
+                "explanation": f"LLM ({AI_AGENT_MODEL}) phân tích yêu cầu và đề xuất gọi Tool '{tool_call.function.name}' với category '{category}'.",
+                "used_llm": True,
+                "model": AI_AGENT_MODEL
+            }
+    except Exception as err:
+        print(f"[LLM WARNING] Falling back to rule-based engine due to LLM call issue: {err}")
+    
+    return None
+
+
+def generate_proposal(scenario_key_or_prompt: str) -> Dict[str, Any]:
+    """Tạo đề xuất kịch bản kiểm thử chi tiết. Ưu tiên LLM, tự động fallback về Rule-based."""
+    # Thử gọi LLM nếu câu lệnh là chuỗi ngữ cảnh dài
+    if AI_AGENT_API_KEY:
+        llm_proposal = generate_proposal_llm(scenario_key_or_prompt)
+        if llm_proposal:
+            return llm_proposal
+
+    # Fallback Rule-based Engine
+    scenario_key = analyze_user_request(scenario_key_or_prompt)
     payloads = load_payloads_dict()
 
     if scenario_key == "rate_limit":
@@ -72,7 +150,8 @@ def generate_proposal(scenario_key: str) -> Dict[str, Any]:
             "count": 25,
             "payload_category": "long_string",
             "payload_value": None,
-            "explanation": "Gửi liên tiếp 25 request tới /api/Quantitys để kiểm chứng plugin rate-limiting (ngưỡng 20 req/min)."
+            "explanation": "Gửi liên tiếp 25 request tới /api/Quantitys để kiểm chứng plugin rate-limiting (ngưỡng 20 req/min).",
+            "used_llm": False
         }
 
     if scenario_key == "forbidden_endpoint":
@@ -83,7 +162,8 @@ def generate_proposal(scenario_key: str) -> Dict[str, Any]:
             "count": 1,
             "payload_category": "long_string",
             "payload_value": None,
-            "explanation": "Gửi request tới /rest/admin/application-version nằm ngoài allowlist để kiểm chứng trả về 403 Forbidden."
+            "explanation": "Gửi request tới /rest/admin/application-version nằm ngoài allowlist để kiểm chứng trả về 403 Forbidden.",
+            "used_llm": False
         }
 
     if scenario_key == "oversized_payload":
@@ -94,7 +174,8 @@ def generate_proposal(scenario_key: str) -> Dict[str, Any]:
             "count": 1,
             "payload_category": "oversized_payload",
             "payload_value": None,
-            "explanation": "Yêu cầu Tool tự sinh chuỗi 1.5MB trong RAM để kiểm chứng plugin request-size-limiting trả về 413 Payload Too Large."
+            "explanation": "Yêu cầu Tool tự sinh chuỗi 1.5MB trong RAM để kiểm chứng plugin request-size-limiting trả về 413 Payload Too Large.",
+            "used_llm": False
         }
 
     if scenario_key == "special_chars":
@@ -107,10 +188,10 @@ def generate_proposal(scenario_key: str) -> Dict[str, Any]:
             "count": 1,
             "payload_category": "special_chars",
             "payload_value": chosen_val,
-            "explanation": f"Gửi ký tự đặc biệt an toàn '{chosen_val}' qua query string để kiểm thử phản ứng filter của Gateway."
+            "explanation": f"Gửi ký tự đặc biệt an toàn '{chosen_val}' qua query string để kiểm thử phản ứng filter của Gateway.",
+            "used_llm": False
         }
 
-    # Default general check
     return {
         "scenario_name": "Kiểm thử kết nối API hợp lệ (Valid Allowlist Endpoint Test)",
         "url": "/api/Quantitys",
@@ -118,26 +199,19 @@ def generate_proposal(scenario_key: str) -> Dict[str, Any]:
         "count": 1,
         "payload_category": "long_string",
         "payload_value": None,
-        "explanation": "Gửi 1 request GET hợp lệ tới /api/Quantitys nằm trong allowlist."
+        "explanation": "Gửi 1 request GET hợp lệ tới /api/Quantitys nằm trong allowlist.",
+        "used_llm": False
     }
 
 
 def execute_proposal(proposal: Dict[str, Any]) -> Dict[str, Any]:
-    """Thực thi đề xuất thông qua safe_requester.py.
-
-    Inputs:
-        proposal (dict): Đề xuất kịch bản từ generate_proposal().
-
-    Outputs:
-        dict: Kết quả thực thi từ Tool.
-    """
+    """Thực thi đề xuất thông qua safe_requester.py."""
     url = proposal.get("url", "/api/Quantitys")
     method = proposal.get("method", "GET")
     count = proposal.get("count", 1)
     category = proposal.get("payload_category", "long_string")
     value = proposal.get("payload_value", None)
 
-    # Tra cứu safe payload
     try:
         resolved_payload = resolve_safe_payload(category, value)
     except Exception as err:
@@ -150,15 +224,7 @@ def execute_proposal(proposal: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def format_agent_report(result: Dict[str, Any]) -> str:
-    """Tổng hợp báo cáo đánh giá an ninh theo Mindset Guardrails cho người dùng.
-
-    Inputs:
-        result (dict): Kết quả thực thi từ execute_proposal().
-
-    Outputs:
-        str: Văn bản báo cáo an ninh hoàn chỉnh.
-    """
-    # Nếu là kết quả burst test
+    """Tổng hợp báo cáo đánh giá an ninh theo Mindset Guardrails cho người dùng."""
     if "total_sent" in result:
         total = result["total_sent"]
         counts = result.get("status_counts", {})
@@ -212,10 +278,10 @@ def format_agent_report(result: Dict[str, Any]) -> str:
 
 def run_agent_session(user_prompt: str) -> str:
     """Luồng xử lý hoàn chỉnh một phiên làm việc của Agent khi nhận lệnh từ Người dùng."""
-    scenario_key = analyze_user_request(user_prompt)
-    proposal = generate_proposal(scenario_key)
+    proposal = generate_proposal(user_prompt)
 
-    print(f"\n🤖 [AGENT THINKING] Phân tích yêu cầu: '{user_prompt}' -> Kịch bản: '{proposal['scenario_name']}'")
+    engine_tag = f"LLM ({proposal.get('model', AI_AGENT_MODEL)})" if proposal.get("used_llm") else "Rule-based Engine"
+    print(f"\n🤖 [AGENT THINKING - {engine_tag}] Phân tích yêu cầu: '{user_prompt}'")
     print(f"💡 [AGENT PROPOSAL] {proposal['explanation']}")
     print(f"   Target: {proposal['method']} {proposal['url']} | Payload Category: {proposal['payload_category']}")
 

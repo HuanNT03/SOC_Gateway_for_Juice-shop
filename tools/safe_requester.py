@@ -52,18 +52,25 @@ PAYLOADS_FILE = os.path.abspath(
 # JSON Schema (Function Calling Constraint) dành cho AI Agent
 TOOL_SCHEMA = {
     "name": "send_request",
-    "description": "Gửi HTTP request kiểm thử an toàn qua Kong API Gateway (Port 8000)",
+    "description": (
+        "Gửi HTTP request kiểm thử an toàn qua Kong API Gateway (Port 8000). "
+        "Tool nhận đầu vào (url, method, payload_category, payload_value, count), "
+        "tự động tiêm header x-api-key từ môi trường, thực thi request và làm sạch (redact) "
+        "mọi dữ liệu nhạy cảm trước khi trả về kết quả. "
+        "Đầu ra bao gồm: status_code (int), endpoint (str), method (str), headers (dict đã masked), "
+        "body (str/json đã masked, tối đa 2KB), truncated (bool) và duration_ms (float)."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
             "url": {
                 "type": "string",
-                "description": "Endpoint path cần kiểm thử (VD: /api/Quantitys hoặc /rest/products/search)"
+                "description": "Endpoint path mụcc tiêu cần kiểm thử (Ví dụ: '/api/Quantitys', '/rest/admin/application-version', '/rest/products/search')."
             },
             "method": {
                 "type": "string",
                 "enum": ["GET", "POST", "OPTIONS"],
-                "description": "Phương thức HTTP"
+                "description": "Phương thức HTTP được phép theo chính sách an toàn (GET, POST, OPTIONS)."
             },
             "payload_category": {
                 "type": "string",
@@ -75,14 +82,18 @@ TOOL_SCHEMA = {
                     "query_param_injection",
                     "oversized_payload"
                 ],
-                "description": "Nhóm payload an toàn cần thử từ config/payloads.json"
+                "description": "Nhóm payload an toàn cần sử dụng từ config/payloads.json: 'long_string' (chuỗi dài), 'special_chars' (ký tự đặc biệt), 'empty_values' (giá trị rỗng), 'type_mismatch' (sai kiểu dữ liệu), 'query_param_injection' (query string), 'oversized_payload' (tự sinh 1.5MB RAM)."
             },
             "payload_value": {
                 "type": "string",
-                "description": "Giá trị cụ thể tùy chọn trong nhóm đã chọn (nếu không truyền sẽ dùng mặc định)"
+                "description": "Giá trị payload cụ thể trong nhóm đã chọn (Tùy chọn. Nếu không truyền, hệ thống sẽ tự chọn giá trị mặc định trong nhóm)."
+            },
+            "count": {
+                "type": "integer",
+                "description": "Số lượng request gửi liên tiếp (Burst Rate Limit Test). Mặc định là 1. Đặt count > 1 (VD: 25) khi người dùng muốn kiểm tra giới hạn tần suất 429 Too Many Requests."
             }
         },
-        "required": ["url", "method"]
+        "required": ["url", "method", "payload_category"]
     }
 }
 
@@ -199,8 +210,8 @@ def send_request(
     target_url = _resolve_url(url)
     req_headers = dict(headers) if headers is not None else {}
     
-    # 3. Tự động tiêm API Key từ môi trường (không hardcode)
-    api_key = os.getenv("AGENT_API_KEY", "agent-secure-key-2026")
+    # 3. Tự động tiêm API Key từ môi trường (không hardcode secret)
+    api_key = os.getenv("AGENT_API_KEY") or os.getenv("KONG_VAULT_ENV_AGENT_API_KEY", "")
     if "x-api-key" not in [k.lower() for k in req_headers.keys()]:
         req_headers["x-api-key"] = api_key
 

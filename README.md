@@ -110,11 +110,40 @@ Hệ thống cung cấp danh sách các nhóm payload kiểm thử an toàn (ben
 
 ---
 
-## 🤖 5. Hướng Dẫn Sử Dụng AI Security Agent (`agent/agent.py`)
+---
 
-AI Security Agent nhận lệnh bằng ngôn ngữ tự nhiên từ người dùng, tự động tra cứu payload an toàn từ `config/payloads.json`, thực thi qua `safe_requester.py` và xuất báo cáo an ninh.
+## 🤖 5. Hướng Dẫn Cấu Hình & Sử Dụng Real AI Security Agent (`agent/agent.py`)
 
-### Cú pháp chạy trực tiếp:
+AI Security Agent là một **Agent thực sự** được tích hợp thư viện `openai` SDK (tương thích với **Alibaba Cloud DashScope / Qwen API** hoặc OpenAI). Agent có khả năng phân tích câu lệnh tự nhiên, thực hiện **Tool Calling (Function Calling)** để gọi `tools/safe_requester.py` và tổng hợp báo cáo an ninh theo Mindset Guardrails.
+
+### 🔑 Cấu Hình Biến Môi Trường (`.env`):
+
+Khai báo các tham số API Key và Endpoint trong tệp `.env` (xem mẫu tại `.env.example`):
+
+```env
+# AI Security Agent LLM Configuration (OpenAI SDK / Alibaba Cloud Qwen API)
+AI_AGENT_API_KEY=your_alibaba_or_openai_api_key_here
+AI_AGENT_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+AI_AGENT_MODEL=qwen-plus
+
+# Kong Gateway API Key Secret
+KONG_VAULT_ENV_AGENT_API_KEY=your_kong_gateway_agent_api_key_here
+AGENT_API_KEY=your_kong_gateway_agent_api_key_here
+```
+
+> **Lưu ý**: Nếu chưa cấu hình `AI_AGENT_API_KEY` hoặc hết quota, Agent sẽ tự động kích hoạt **Chế độ dự phòng (Rule-based Engine Fallback)** để đảm bảo hệ thống và các bộ kiểm thử tự động (Unit Tests) hoạt động liên tục không bị gián đoạn.
+
+### 🛠️ Khai Báo Tool Specification (`TOOL_SCHEMA`):
+Agent sử dụng bảng định nghĩa Tool Schema chuẩn hóa dạng JSON Schema để truyền tham số chính xác vào `safe_requester.py`:
+- **Đầu vào (Inputs)**:
+  - `url` (str): Path endpoint mục tiêu (VD: `/api/Quantitys`, `/rest/admin/application-version`).
+  - `method` (str): Phương thức HTTP (`GET`, `POST`, `OPTIONS`).
+  - `payload_category` (str): Nhóm payload an toàn (`long_string`, `special_chars`, `empty_values`, `type_mismatch`, `query_param_injection`, `oversized_payload`).
+  - `payload_value` (str, optional): Giá trị cụ thể chọn trong nhóm.
+  - `count` (int, optional): Số lượng request burst rate limit (VD: `25`).
+- **Đầu ra (Outputs)**: Dictionary gồm `status_code`, `endpoint`, `method`, `headers` (masked), `body` (masked, max 2KB), `truncated`, `duration_ms`.
+
+### Cú pháp chạy trực tiếp từ Terminal:
 
 ```bash
 python3 agent/agent.py "<CÂU_LỆNH_KIỂM_THỬ>"

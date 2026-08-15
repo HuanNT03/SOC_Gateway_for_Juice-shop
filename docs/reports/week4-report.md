@@ -71,14 +71,14 @@ sequenceDiagram
     participant Juice as Juice Shop (Backend web:3000)
 
     Note over Agent, Kong: Kịch bản 1: AI Agent dùng API Key hợp lệ gọi Endpoint được phép
-    Agent->>Kong: GET /api/Quantitys (Header: x-api-key: agent-secure-key-2026)
+    Agent->>Kong: GET /api/Quantitys (Header: x-api-key: sentinel-agent-secure-key-2026)
     Note over Kong: Router match guest-route -> Service Pre-Function hợp lệ -> Key-Auth identify consumer ai-agent -> Consumer Rate-Limit 20/min
     Kong->>Juice: Proxy Request sang Backend (Redacted API Key)
     Juice-->>Kong: HTTP 200 OK (Data)
     Kong-->>Agent: HTTP 200 OK (Data - Rate Limit: 20/min)
 
     Note over Agent, Kong: Kịch bản 2: AI Agent dùng API Key cố tình truy cập Route ngoài Scope (Vượt quyền)
-    Agent->>Kong: GET /rest/admin/application-version (Header: x-api-key: agent-secure-key-2026)
+    Agent->>Kong: GET /rest/admin/application-version (Header: x-api-key: sentinel-agent-secure-key-2026)
     Note over Kong: Router match guest-route -> Service Pre-Function phát hiện Key hợp lệ nhưng Endpoint ngoài phạm vi cho phép
     Kong-->>Agent: HTTP 403 Forbidden ("You cannot consume this service")
 
@@ -106,7 +106,7 @@ sequenceDiagram
 ### 3.2 🛡️ Cấu Hình Hạ Tầng Kong API Gateway (Port 8000 & 8001)
 - **Cổng Proxy (Port 8000)**: Điểm đầu vào duy nhất (Single Entrypoint) cho mọi lưu lượng từ bên ngoài.
 - **Cổng Admin API (Port 8001)**: Dùng kiểm tra trạng thái và routes của Gateway. *(Khuyến nghị Production: Cần bảo mật bằng SSH Tunnel hoặc chặn public access)*.
-- **Quản Lý Secret Bí Mật**: Secret API Key được khai báo qua biến `KONG_VAULT_ENV_AGENT_API_KEY` trong `.env` (`agent-secure-key-2026`). Script LuaJIT `render_config.lua` nạp động vào `/tmp/kong.yml` khi boot container mà không lưu secret thô trong Git.
+- **Quản Lý Secret Bí Mật**: Secret API Key được khai báo qua biến `KONG_VAULT_ENV_AGENT_API_KEY` trong `.env` (`sentinel-agent-secure-key-2026`). Script LuaJIT `render_config.lua` nạp động vào `/tmp/kong.yml` khi boot container mà không lưu secret thô trong Git.
 - **Cơ Chế Bảo Vệ Hạ Tầng**:
   - **Giới hạn kích thước Payload**: Sử dụng `allowed_payload_size: 1` (chặn gửi file/payload lớn hơn 1MB).
   - **Giới hạn thời gian chờ (Timeouts)**: `connect_timeout: 5000ms`, `read_timeout: 5000ms`, `write_timeout: 5000ms` giúp bảo vệ Gateway không bị nghẽn kết nối và chống DoS/Slowloris nếu server đích sập.
