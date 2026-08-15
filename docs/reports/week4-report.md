@@ -145,3 +145,70 @@ sequenceDiagram
 3. **Vấn đề API Key truyền chuỗi rỗng (`""`)**:
    - *Câu hỏi*: Nếu API Key truyền là chuỗi rỗng `""` thì có truy cập được không?
    - *Trả lời*: Mã nguồn Lua trong `pre-function` kiểm tra `if key and key ~= "" then`. Nếu truyền `""`, Gateway sẽ xử lý như một request không có key (đưa về nhóm Guest) thay vì báo 401 Unauthorized.
+
+
+# Python Tool gửi request qua Gateway
+
+Có đính kèm api-key để agent không truy cập trái phép vào các route không cấp phép cho agent.
+
+Giới hạn thời gian chờ (Timeout): 
+
+Thiết lập `timeout=7` (7 giây) cho tất cả cuộc gọi HTTP của Tool. Lý do chọn 7 giây: Kong Gateway cấu hình connect_timeout & read_timeout là 5 giây (5000ms). Việc đặt `timeout=7` tạo ra khoảng đệm an toàn 2 giây, giúp Tool đủ kiên nhẫn hứng trọn vẹn thông báo lỗi 504 Gateway Timeout chuẩn từ Kong nếu backend Juice Shop bị treo, thay vì Tool tự ném lỗi ReadTimeout ngắt kết nối cục bộ làm mù mờ nguyên nhân thực sự.
+
+Giới hạn kích thước response (Response Size):
+
+- Sử dụng tham số `stream=True` trong `requests` để không tải toàn bộ response body vào RAM cùng một lúc.
+- **Sử dụng `response.iter_content(chunk_size=2048)`**
+
+Có chức năng log request/response ra log.
+
+Chỉ cho phép `GET`, `POST`, `OPTIONS`. Nếu truyền method khác (như `DELETE`, `PUT`, `PATCH`), từ chối ngay ở cấp Tool và trả về JSON lỗi
+
+Định nghĩa hàm send_request(url, method="GET", headers=None, payload=None).
+
+Cần redact các thông tin nhạy cảm như `x-api-key`, `apikey`, `authorization`, `password`, `token`, `secret`, `set-cookie`, `cookie` .
+
+Gọi `mask_sensitive_data()` **1 lần duy nhất** trên toàn bộ dữ liệu (headers + body). Sử dụng kết quả cho cả ghi log lẫn trả về caller → đảm bảo không có đường nào dữ liệu nhạy cảm thoát ra ngoài.
+
+Khi nhận `payload_category: "oversized_payload"`, Tool tự sinh chuỗi `"A" * 1_500_000` (~1.5MB) trong RAM cục bộ Python và gửi request POST tới Gateway.
+
+# Agent kiểm tra request
+
+Phải đảm bảo có trường hợp test payload > 1MB
+
+Nhận yêu cầu kiểm thử từ người dùng dạng text (VD: "Kiểm tra rate limit của endpoint /api/Quantitys", "Thử XSS trên search endpoint").
+
+Agent đọc `config/payloads.json` để biết danh sách các nhóm payload khả dụng.
+
+Hiển thị đề xuất cho người dùng xác nhận trước khi thực hiện.
+
+Agent gọi Tool `safe_requester.py`  và nhận kết quả đã masked từ Tool (response đã qua `mask_sensitive_data()`). Phân tích status code và đưa ra nhận xét.
+
+# Nhật ký request và response
+
+Xây dựng bộ lọc Redact đệ quy, hàm `mask_sensitive_data(data)` để quét được nested JSON (dict lồng dict, list chứa dict):
+
+- Nếu `data` là `dict`: duyệt từng key/value. Nếu key khớp danh sách nhạy cảm → mask giá trị. Nếu value là `dict` hoặc `list` → gọi đệ quy.
+- Nếu `data` là `list`: duyệt từng phần tử, gọi đệ quy cho mỗi phần tử.
+- Nếu `data` là `str`: chạy regex quét JWT thuần và email.
+
+Mỗi dòng log ghi nhận đầy đủ các thông tin Audit:
+
+```json
+{
+	"timestamp": "Thời gian thực hiện request theo chuẩn ISO8601 UTC."
+	"endpoint": "URL path truy vấn."
+	"method": "Phương thức HTTP (GET, POST, OPTIONS)."
+	"status_code": "Mã phản hồi HTTP từ Gateway/Juice Shop (VD: 200, 401, 403, 413, 429)."
+	"request_headers": "Request Headers sau khi đã đi qua hàm mask_sensitive_data."
+	"response_headers": "Response Headers sau khi đã đi qua hàm mask_sensitive_data (che giấu Set-Cookie session token và thông tin hạ tầng)."
+	"response_body_snippet": "Tối đa 2048 bytes nội dung phản hồi đã được làm sạch."
+	"duration_ms": "Thời gian xử lý request (tính theo milisec)."
+}
+```
+
+## Vấn đề tồn đọng
+
+Việc cắt response ở mốc 2KB trước khi mask có thể làm lộ một phần chuỗi bí mật nếu điểm cắt rơi giữa JWT/email, đây là đánh đổi giữa chống zip-bomb và độ chính xác của redaction.
+
+Trong các tuần sau khi agent chỉ để xuất request thì có thể để `oversized_payload` như 1 dạng tham số trong hàm send_request dạng boolean để người dùng dễ sử dụng.

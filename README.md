@@ -42,9 +42,14 @@ Dự án triển khai lớp bảo vệ Kong API Gateway đứng trước ứng d
 | Lệnh | Cú pháp sử dụng | Mô tả chức năng |
 |---|---|---|
 | `make help` | `make help` | Hiển thị menu hướng dẫn các lệnh trong Makefile. |
-| `make up` | `make up` | Khởi chạy toàn bộ hạ tầng (Juice Shop + Kong Gateway). |
-| `make down` | `make down` | Dừng và gỡ bỏ các container hạ tầng. |
+| `make up` | `make up` | Khởi chạy toàn bộ hạ tầng (Juice Shop + Kong Gateway + Streamlit Agent UI). |
+| `make down` | `make down` | Dừng và gỡ bỏ toàn bộ container. |
 | `make restart` | `make restart` | Khởi động lại toàn bộ các dịch vụ. |
+| `make server-up` | `make server-up` | Khởi chạy riêng dịch vụ máy chủ Backend (Kong Gateway + Juice Shop). |
+| `make server-down` | `make server-down` | Dừng riêng dịch vụ máy chủ Backend (Kong Gateway + Juice Shop). |
+| `make server-restart` | `make server-restart` | Khởi động lại riêng dịch vụ máy chủ Backend. |
+| `make server-logs` | `make server-logs` | Xem nhật ký (logs) thời gian thực của máy chủ Backend. |
+| `make ui-logs` | `make ui-logs` | Xem nhật ký (logs) thời gian thực của container Streamlit Agent UI. |
 | `make status` | `make status` | Kiểm tra trạng thái và Health Check của các container. |
 | `make logs` | `make logs` | Xem nhật ký (logs) thời gian thực của toàn bộ hệ thống. |
 | `make routes` | `make routes` | Truy vấn danh sách Routes đang nạp trong Kong Admin API (Port 8001). |

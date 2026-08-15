@@ -59,6 +59,29 @@ services:
     networks:
       - sentinel-net
 
+  # ----------------------------------------------------------------------------
+  # STREAMLIT WEB UI & AI SECURITY AGENT
+  # ----------------------------------------------------------------------------
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sentinel-agent-ui:latest
+    container_name: sentinel-agent-ui
+    restart: always
+    ports:
+      - "8501:8501"
+    environment:
+      - GATEWAY_HOST=http://gateway:8000
+      - AGENT_API_KEY=${KONG_VAULT_ENV_AGENT_API_KEY:-sentinel-agent-secure-key-2026}
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config
+    depends_on:
+      - gateway
+    networks:
+      - sentinel-net
+
 networks:
   sentinel-net:
     driver: bridge

@@ -17,7 +17,7 @@ YELLOW := \033[33m
 RED    := \033[31m
 RESET  := \033[0m
 
-.PHONY: help up down restart status logs routes clean web-pull web-logs test-request test-ratelimit
+.PHONY: help up down restart status logs routes clean web-pull web-logs ui-logs test-request test-ratelimit server-up server-down server-restart server-logs
 
 # Default target when running 'make' without arguments
 .DEFAULT_GOAL := help
@@ -45,12 +45,13 @@ help: ## Hiển thị menu hướng dẫn các lệnh trong Makefile
 ## INFRASTRUCTURE & GATEWAY TARGETS
 ## -----------------------------------------------------------------------------
 
-up: ## Khởi chạy toàn bộ hạ tầng (Juice Shop + Kong Gateway) trên cổng 8000
-	@echo "$(CYAN)[+] Đang khởi chạy hạ tầng Kong Gateway và Juice Shop...$(RESET)"
+up: ## Khởi chạy toàn bộ hạ tầng (Juice Shop + Kong Gateway + Streamlit Agent UI)
+	@echo "$(CYAN)[+] Đang khởi chạy hạ tầng Kong Gateway, Juice Shop và Agent UI...$(RESET)"
 	docker compose -f $(COMPOSE_FILE) up -d
 	@echo "$(GREEN)[✔] Hạ tầng đã khởi chạy thành công!$(RESET)"
-	@echo "$(GREEN)[✔] Kong Proxy Access:  http://localhost:8000$(RESET)"
-	@echo "$(GREEN)[✔] Kong Admin API:     http://localhost:8001$(RESET)"
+	@echo "$(GREEN)[✔] Kong Proxy Access:     http://localhost:8000$(RESET)"
+	@echo "$(GREEN)[✔] Kong Admin API:        http://localhost:8001$(RESET)"
+	@echo "$(GREEN)[✔] Streamlit Agent UI:    http://localhost:8501$(RESET)"
 
 down: ## Dừng và gỡ bỏ toàn bộ container (Kong Gateway + Juice Shop)
 	@echo "$(YELLOW)[!] Đang dừng các container hạ tầng...$(RESET)"
@@ -93,6 +94,36 @@ web-logs: ## Xem nhật ký (logs) thời gian thực riêng của container Jui
 	@echo "$(CYAN)[+] Hiển thị logs của Juice Shop (Nhấn Ctrl+C để thoát)...$(RESET)"
 	docker compose -f $(COMPOSE_FILE) logs -f $(SERVICE_WEB)
 
+ui-logs: ## Xem nhật ký (logs) thời gian thực riêng của container Streamlit Agent UI
+	@echo "$(CYAN)[+] Hiển thị logs của Streamlit Agent UI (Nhấn Ctrl+C để thoát)...$(RESET)"
+	docker compose -f $(COMPOSE_FILE) logs -f ui
+
+## -----------------------------------------------------------------------------
+## SERVER BACKEND TARGETS (Juice Shop + Kong Gateway)
+## -----------------------------------------------------------------------------
+
+server-up: ## Khởi chạy riêng dịch vụ máy chủ (Kong Gateway & Juice Shop)
+	@echo "$(CYAN)[+] Đang khởi chạy dịch vụ máy chủ (Kong Gateway & Juice Shop)...$(RESET)"
+	docker compose -f $(COMPOSE_FILE) up -d $(SERVICE_WEB) $(SERVICE_GATEWAY)
+	@echo "$(GREEN)[✔] Máy chủ Backend đã khởi chạy thành công!$(RESET)"
+	@echo "$(GREEN)[✔] Kong Proxy Access:     http://localhost:8000$(RESET)"
+	@echo "$(GREEN)[✔] Kong Admin API:        http://localhost:8001$(RESET)"
+
+server-down: ## Dừng riêng dịch vụ máy chủ (Kong Gateway & Juice Shop)
+	@echo "$(YELLOW)[!] Đang dừng dịch vụ máy chủ...$(RESET)"
+	docker compose -f $(COMPOSE_FILE) stop $(SERVICE_WEB) $(SERVICE_GATEWAY)
+	@echo "$(GREEN)[✔] Đã dừng dịch vụ máy chủ!$(RESET)"
+
+server-restart: ## Khởi động lại riêng dịch vụ máy chủ (Kong Gateway & Juice Shop)
+	@echo "$(CYAN)[+] Đang khởi động lại dịch vụ máy chủ...$(RESET)"
+	docker compose -f $(COMPOSE_FILE) restart $(SERVICE_WEB) $(SERVICE_GATEWAY)
+	@echo "$(GREEN)[✔] Đã khởi động lại dịch vụ máy chủ thành công!$(RESET)"
+
+server-logs: ## Xem nhật ký (logs) thời gian thực của máy chủ (Kong + Juice Shop)
+	@echo "$(CYAN)[+] Hiển thị logs của máy chủ Backend (Nhấn Ctrl+C để thoát)...$(RESET)"
+	docker compose -f $(COMPOSE_FILE) logs -f $(SERVICE_WEB) $(SERVICE_GATEWAY)
+
+
 ## -----------------------------------------------------------------------------
 ## PYTHON TOOL TEST TARGETS
 ## -----------------------------------------------------------------------------
@@ -104,4 +135,5 @@ test-request: ## Gửi 1 HTTP request an toàn qua Gateway (VD: make test-reques
 test-ratelimit: ## Chạy burst test N request kiểm chứng Rate Limit 429 (VD: make test-ratelimit COUNT=25)
 	@echo "$(CYAN)[+] Đang chạy Burst Rate Limit Test...$(RESET)"
 	@python3 tools/safe_requester.py --url $(or $(URL),/api/Quantitys) --method $(or $(METHOD),GET) --count $(or $(COUNT),25)
+
 

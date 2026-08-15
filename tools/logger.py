@@ -30,7 +30,10 @@ import os
 import json
 from datetime import datetime, timezone
 from typing import Any, Dict
-from tools.redactor import mask_sensitive_data
+try:
+    from redactor import mask_sensitive_data
+except ImportError:
+    from tools.redactor import mask_sensitive_data
 
 DEFAULT_LOG_FILE = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "logs", "gateway_audit.jsonl")
