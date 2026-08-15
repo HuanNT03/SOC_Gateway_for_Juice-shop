@@ -17,7 +17,7 @@ YELLOW := \033[33m
 RED    := \033[31m
 RESET  := \033[0m
 
-.PHONY: help up down restart status logs routes clean web-pull web-logs
+.PHONY: help up down restart status logs routes clean web-pull web-logs test-request test-ratelimit
 
 # Default target when running 'make' without arguments
 .DEFAULT_GOAL := help
@@ -92,3 +92,16 @@ web-pull: ## Tải Docker image OWASP Juice Shop v20.1.1 từ Docker Hub
 web-logs: ## Xem nhật ký (logs) thời gian thực riêng của container Juice Shop
 	@echo "$(CYAN)[+] Hiển thị logs của Juice Shop (Nhấn Ctrl+C để thoát)...$(RESET)"
 	docker compose -f $(COMPOSE_FILE) logs -f $(SERVICE_WEB)
+
+## -----------------------------------------------------------------------------
+## PYTHON TOOL TEST TARGETS
+## -----------------------------------------------------------------------------
+
+test-request: ## Gửi 1 HTTP request an toàn qua Gateway (VD: make test-request URL=/api/Quantitys METHOD=GET)
+	@echo "$(CYAN)[+] Đang chạy Python Tool kiểm thử HTTP request...$(RESET)"
+	@python3 tools/safe_requester.py --url $(or $(URL),/api/Quantitys) --method $(or $(METHOD),GET) $(if $(HEADERS),--headers '$(HEADERS)') $(if $(DATA),--data '$(DATA)')
+
+test-ratelimit: ## Chạy burst test N request kiểm chứng Rate Limit 429 (VD: make test-ratelimit COUNT=25)
+	@echo "$(CYAN)[+] Đang chạy Burst Rate Limit Test...$(RESET)"
+	@python3 tools/safe_requester.py --url $(or $(URL),/api/Quantitys) --method $(or $(METHOD),GET) --count $(or $(COUNT),25)
+
