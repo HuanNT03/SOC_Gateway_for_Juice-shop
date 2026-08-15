@@ -183,7 +183,17 @@ def send_request(
     # 1. Kiểm tra chính sách HTTP Method
     if not validate_method(method_upper):
         error_msg = f"Method not allowed by Tool Policy: '{method_upper}'. Allowed: {sorted(list(ALLOWED_METHODS))}"
-        return {"status": "error", "status_code": 405, "message": error_msg}
+        return {
+            "status": "error",
+            "status_code": 405,
+            "message": error_msg,
+            "endpoint": url,
+            "method": method_upper,
+            "headers": {},
+            "body": error_msg,
+            "truncated": False,
+            "duration_ms": 0.0
+        }
 
     # 2. Xử lý URL & Headers
     target_url = _resolve_url(url)
