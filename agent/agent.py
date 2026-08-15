@@ -190,7 +190,8 @@ def generate_proposal(scenario_key_or_prompt: str) -> Dict[str, Any]:
             "payload_category": "long_string",
             "payload_value": None,
             "explanation": "Gửi request tới /rest/admin/application-version nằm ngoài allowlist để kiểm chứng trả về 403 Forbidden.",
-            "used_llm": False
+            "used_llm": False,
+            "fallback_reason": LAST_FALLBACK_REASON
         }
 
     if scenario_key == "oversized_payload":
@@ -202,7 +203,8 @@ def generate_proposal(scenario_key_or_prompt: str) -> Dict[str, Any]:
             "payload_category": "oversized_payload",
             "payload_value": None,
             "explanation": "Yêu cầu Tool tự sinh chuỗi 1.5MB trong RAM để kiểm chứng plugin request-size-limiting trả về 413 Payload Too Large.",
-            "used_llm": False
+            "used_llm": False,
+            "fallback_reason": LAST_FALLBACK_REASON
         }
 
     if scenario_key == "special_chars":
@@ -216,7 +218,8 @@ def generate_proposal(scenario_key_or_prompt: str) -> Dict[str, Any]:
             "payload_category": "special_chars",
             "payload_value": chosen_val,
             "explanation": f"Gửi ký tự đặc biệt an toàn '{chosen_val}' qua query string để kiểm thử phản ứng filter của Gateway.",
-            "used_llm": False
+            "used_llm": False,
+            "fallback_reason": LAST_FALLBACK_REASON
         }
 
     return {
@@ -227,7 +230,8 @@ def generate_proposal(scenario_key_or_prompt: str) -> Dict[str, Any]:
         "payload_category": "long_string",
         "payload_value": None,
         "explanation": "Gửi 1 request GET hợp lệ tới /api/Quantitys nằm trong allowlist.",
-        "used_llm": False
+        "used_llm": False,
+        "fallback_reason": LAST_FALLBACK_REASON
     }
 
 
