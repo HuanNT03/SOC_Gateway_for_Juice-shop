@@ -92,25 +92,24 @@ def render_ui():
         st.subheader("Trợ Lý Kiểm Thử AI Agent (Interactive Mode)")
         st.markdown("Nhập câu lệnh bằng ngôn ngữ tự nhiên hoặc bấm nút kịch bản mẫu bên dưới:")
 
-        col1, col2, col3, col4 = st.columns(4)
-        preset_prompt = None
+        if "user_prompt_input" not in st.session_state:
+            st.session_state["user_prompt_input"] = "Hãy kiểm tra rate limit của endpoint /api/Quantitys"
 
+        def _set_preset_prompt(text: str):
+            st.session_state["user_prompt_input"] = text
+
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
-            if st.button("🔥 Rate Limit Test"):
-                preset_prompt = "Hãy kiểm tra rate limit của endpoint /api/Quantitys"
+            st.button("🔥 Rate Limit Test", on_click=_set_preset_prompt, args=("Hãy kiểm tra rate limit của endpoint /api/Quantitys với 30 request",))
         with col2:
-            if st.button("🚫 Forbidden ACL Test"):
-                preset_prompt = "Thử truy cập vào endpoint admin /rest/admin/application-version"
+            st.button("🚫 Forbidden ACL Test", on_click=_set_preset_prompt, args=("Thử truy cập vào endpoint admin /rest/admin/application-version",))
         with col3:
-            if st.button("📦 1.5MB Oversized Test"):
-                preset_prompt = "Gửi file lớn hoặc oversized payload để test gateway"
+            st.button("📦 1.5MB Oversized Test", on_click=_set_preset_prompt, args=("Gửi file lớn hoặc oversized payload để test gateway",))
         with col4:
-            if st.button("💉 Special Chars / XSS Probe"):
-                preset_prompt = "Thử chèn ký tự đặc biệt vào search endpoint"
+            st.button("💉 Special Chars Probe", on_click=_set_preset_prompt, args=("Thử chèn ký tự đặc biệt vào search endpoint",))
 
         user_input = st.text_input(
             "Câu lệnh kiểm thử:",
-            value=preset_prompt if preset_prompt else "Hãy kiểm tra rate limit của endpoint /api/Quantitys",
             key="user_prompt_input"
         )
 
@@ -118,8 +117,13 @@ def render_ui():
             with st.spinner("Agent đang phân tích kịch bản và gửi request qua Gateway..."):
                 proposal = generate_proposal(user_input)
 
-                engine_name = f"🤖 LLM Agent ({proposal.get('model', 'Qwen')})" if proposal.get("used_llm") else "⚙️ Rule-based Engine"
-                st.info(f"**Engine**: {engine_name}\n\n**Kịch bản đề xuất**: {proposal['scenario_name']}\n\n**Chi tiết**: {proposal['explanation']}")
+                if proposal.get("used_llm"):
+                    st.success(f"🤖 **Real LLM Agent ({proposal.get('model', 'Qwen')})** đang xử lý yêu cầu.")
+                else:
+                    reason = proposal.get("fallback_reason", "Chưa cấu hình API Key hoặc lỗi kết nối")
+                    st.warning(f"⚙️ **Chế độ dự phòng (Rule-based Engine Fallback)** được kích hoạt.\n*Nguyên nhân*: {reason}")
+
+                st.info(f"**Kịch bản đề xuất**: {proposal['scenario_name']}\n\n**Chi tiết**: {proposal['explanation']}")
                 
                 result = execute_proposal(proposal)
                 report = format_agent_report(result)

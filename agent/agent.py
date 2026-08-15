@@ -65,9 +65,17 @@ def analyze_user_request(user_prompt: str) -> str:
     return "general_check"
 
 
+import re
+
+LAST_FALLBACK_REASON = ""
+
 def generate_proposal_llm(user_prompt: str) -> Optional[Dict[str, Any]]:
     """Sử dụng OpenAI SDK (tương thích Alibaba Cloud Qwen API) để phân tích câu lệnh và đề xuất Tool Calling."""
+    global LAST_FALLBACK_REASON
+    LAST_FALLBACK_REASON = ""
+
     if not AI_AGENT_API_KEY:
+        LAST_FALLBACK_REASON = "AI_AGENT_API_KEY chưa được khai báo trong tệp .env"
         return None
 
     try:
@@ -110,8 +118,17 @@ def generate_proposal_llm(user_prompt: str) -> Optional[Dict[str, Any]]:
             category = args.get("payload_category", "long_string")
             value = args.get("payload_value", None)
 
-            # Tự động tính số lượng request nếu liên quan đến rate limit
-            count = 25 if "rate" in user_prompt.lower() or category == "rate_limit" else 1
+            # Ưu tiên lấy count từ LLM Tool Call argument
+            llm_count = args.get("count")
+            if llm_count and isinstance(llm_count, int) and llm_count > 0:
+                count = llm_count
+            else:
+                # Tìm số lượng request trong câu lệnh của người dùng (VD: 30 request -> 30)
+                match = re.search(r"(\d+)\s*(?:req|request|lần)?", user_prompt.lower())
+                if match and int(match.group(1)) > 1:
+                    count = int(match.group(1))
+                else:
+                    count = 25 if "rate" in user_prompt.lower() or category == "rate_limit" else 1
 
             return {
                 "scenario_name": f"LLM Proposed: {category} on {method} {url}",
@@ -120,11 +137,12 @@ def generate_proposal_llm(user_prompt: str) -> Optional[Dict[str, Any]]:
                 "count": count,
                 "payload_category": category,
                 "payload_value": value,
-                "explanation": f"LLM ({AI_AGENT_MODEL}) phân tích yêu cầu và đề xuất gọi Tool '{tool_call.function.name}' với category '{category}'.",
+                "explanation": f"LLM ({AI_AGENT_MODEL}) phân tích yêu cầu và đề xuất gọi Tool '{tool_call.function.name}' (Category: '{category}', Count: {count}).",
                 "used_llm": True,
                 "model": AI_AGENT_MODEL
             }
     except Exception as err:
+        LAST_FALLBACK_REASON = f"Lỗi gọi LLM API ({err})"
         print(f"[LLM WARNING] Falling back to rule-based engine due to LLM call issue: {err}")
     
     return None
@@ -132,26 +150,35 @@ def generate_proposal_llm(user_prompt: str) -> Optional[Dict[str, Any]]:
 
 def generate_proposal(scenario_key_or_prompt: str) -> Dict[str, Any]:
     """Tạo đề xuất kịch bản kiểm thử chi tiết. Ưu tiên LLM, tự động fallback về Rule-based."""
+    global LAST_FALLBACK_REASON
+
     # Thử gọi LLM nếu câu lệnh là chuỗi ngữ cảnh dài
     if AI_AGENT_API_KEY:
         llm_proposal = generate_proposal_llm(scenario_key_or_prompt)
         if llm_proposal:
             return llm_proposal
+    else:
+        LAST_FALLBACK_REASON = "AI_AGENT_API_KEY chưa được khai báo trong .env"
 
     # Fallback Rule-based Engine
     scenario_key = analyze_user_request(scenario_key_or_prompt)
     payloads = load_payloads_dict()
+
+    # Trích xuất số lượng count trong prompt nếu người dùng yêu cầu cụ thể (VD: 30 request)
+    match_count = re.search(r"(\d+)\s*(?:req|request|lần)?", scenario_key_or_prompt.lower())
+    parsed_count = int(match_count.group(1)) if match_count and int(match_count.group(1)) > 1 else 25
 
     if scenario_key == "rate_limit":
         return {
             "scenario_name": "Kiểm thử giới hạn tốc độ (Rate Limiting Test)",
             "url": "/api/Quantitys",
             "method": "GET",
-            "count": 25,
+            "count": parsed_count,
             "payload_category": "long_string",
             "payload_value": None,
-            "explanation": "Gửi liên tiếp 25 request tới /api/Quantitys để kiểm chứng plugin rate-limiting (ngưỡng 20 req/min).",
-            "used_llm": False
+            "explanation": f"Gửi liên tiếp {parsed_count} request tới /api/Quantitys để kiểm chứng plugin rate-limiting (ngưỡng 20 req/min).",
+            "used_llm": False,
+            "fallback_reason": LAST_FALLBACK_REASON
         }
 
     if scenario_key == "forbidden_endpoint":
