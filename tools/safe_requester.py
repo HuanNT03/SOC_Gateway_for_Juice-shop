@@ -368,13 +368,20 @@ def main():
             print(f"[CLI ERROR] Invalid JSON string in --headers: {e}")
             sys.exit(1)
 
+    parsed_payload = args.data
+    if args.data and isinstance(args.data, str):
+        try:
+            parsed_payload = resolve_safe_payload(args.data)
+        except Exception:
+            parsed_payload = args.data
+
     print(f"\n[+] Executing {args.method} request to '{args.url}' (Count: {args.count})...")
     if args.count > 1:
-        summary = burst_test(args.url, count=args.count, method=args.method, headers=parsed_headers, payload=args.data)
+        summary = burst_test(args.url, count=args.count, method=args.method, headers=parsed_headers, payload=parsed_payload)
         print(f"[✔] Burst Test Summary: Sent {summary['total_sent']} requests.")
         print(f"    Status Codes Distribution: {json.dumps(summary['status_counts'])}")
     else:
-        result = send_request(args.url, method=args.method, headers=parsed_headers, payload=args.data)
+        result = send_request(args.url, method=args.method, headers=parsed_headers, payload=parsed_payload)
         print(f"[✔] Status Code: {result['status_code']}")
         print(f"[✔] Duration: {result['duration_ms']} ms | Truncated: {result['truncated']}")
         print(f"[✔] Response Body (Masked):\n{result['body']}")

@@ -91,6 +91,12 @@ python3 tools/safe_requester.py --url <ENDPOINT> --method <GET|POST|OPTIONS> [--
    make test-ratelimit URL=/api/Quantitys COUNT=25
    ```
 
+5. **Kiểm thử Payload ngoại cỡ > 1MB (413 Payload Too Large)**:
+   ```bash
+   make test-request URL=/api/Quantitys METHOD=POST DATA=oversized_payload
+   ```
+   > **Lưu ý**: Phải sử dụng phương thức **`METHOD=POST`** (hoặc PUT) để tải Request Body lên kết nối. Phương thức `GET` không upload body nên Gateway sẽ trả về 200 OK bình thường.
+
 ---
 
 ## 🛡️ 4. Thư Viện Safe Payloads & Guardrails (`config/payloads.json`)
