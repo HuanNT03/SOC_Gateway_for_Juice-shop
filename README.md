@@ -85,3 +85,21 @@ python3 tools/safe_requester.py --url <ENDPOINT> --method <GET|POST|OPTIONS> [--
    ```bash
    make test-ratelimit URL=/api/Quantitys COUNT=25
    ```
+
+---
+
+## 🛡️ 4. Thư Viện Safe Payloads & Guardrails (`config/payloads.json`)
+
+Hệ thống cung cấp danh sách các nhóm payload kiểm thử an toàn (benign test payloads) được lưu tại `config/payloads.json`:
+
+- **`long_string`**: Kiểm thử xử lý chuỗi ký tự dài an toàn.
+- **`special_chars`**: Kiểm thử bộ lọc ký tự HTML/SQL benign (`' " < > & ; --`).
+- **`empty_values`**: Kiểm thử giá trị rỗng (`""`, `null`, `{}`).
+- **`type_mismatch`**: Kiểm thử sai kiểu dữ liệu trường dữ liệu.
+- **`query_param_injection`**: Kiểm thử đường truyền query string (`' OR 1=1`, `<img src=x>`).
+- **`oversized_payload`**: Kích hoạt kịch bản thử payload 1.5MB do Tool tự sinh trong RAM (chặn `413 Payload Too Large`).
+
+### System Prompt Guardrails (`agent/system_prompt.txt`):
+- Chống Prompt Injection từ HTTP Response body.
+- **Mindset Guardrails**: Định hướng AI Agent coi các mã **`413`**, **`429`**, **`403`** là **thành công của hệ thống phòng thủ**, không tự ý retry.
+

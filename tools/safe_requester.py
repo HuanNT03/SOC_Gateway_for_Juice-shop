@@ -45,6 +45,95 @@ DEFAULT_GATEWAY_HOST = "http://localhost:8000"
 DEFAULT_TIMEOUT = 7.0  # 7 giây (5s Kong timeout + 2s buffer margin)
 MAX_RESPONSE_BYTES = 2048  # 2KB
 
+PAYLOADS_FILE = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "config", "payloads.json")
+)
+
+# JSON Schema (Function Calling Constraint) dành cho AI Agent
+TOOL_SCHEMA = {
+    "name": "send_request",
+    "description": "Gửi HTTP request kiểm thử an toàn qua Kong API Gateway (Port 8000)",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "Endpoint path cần kiểm thử (VD: /api/Quantitys hoặc /rest/products/search)"
+            },
+            "method": {
+                "type": "string",
+                "enum": ["GET", "POST", "OPTIONS"],
+                "description": "Phương thức HTTP"
+            },
+            "payload_category": {
+                "type": "string",
+                "enum": [
+                    "long_string",
+                    "special_chars",
+                    "empty_values",
+                    "type_mismatch",
+                    "query_param_injection",
+                    "oversized_payload"
+                ],
+                "description": "Nhóm payload an toàn cần thử từ config/payloads.json"
+            },
+            "payload_value": {
+                "type": "string",
+                "description": "Giá trị cụ thể tùy chọn trong nhóm đã chọn (nếu không truyền sẽ dùng mặc định)"
+            }
+        },
+        "required": ["url", "method"]
+    }
+}
+
+
+def load_payloads_dict() -> Dict[str, Any]:
+    """Hàm phụ trợ: Nạp từ điển safe payloads từ config/payloads.json."""
+    if not os.path.exists(PAYLOADS_FILE):
+        return {}
+    try:
+        with open(PAYLOADS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[PAYLOAD ERROR] Unable to load payloads.json: {e}")
+        return {}
+
+
+def resolve_safe_payload(category: str, value: Optional[str] = None) -> Any:
+    """Tra cứu và xác thực payload an toàn từ config/payloads.json.
+
+    Inputs:
+        category (str): Nhóm payload ("long_string", "special_chars", "oversized_payload", v.v.).
+        value (str, optional): Giá trị cụ thể mà Agent chọn.
+
+    Outputs:
+        Any: Nội dung payload đã được kiểm duyệt an toàn.
+
+    Raises:
+        ValueError: Nếu category không tồn tại hoặc value không thuộc danh sách được duyệt.
+    """
+    category = category.strip()
+    if category == "oversized_payload":
+        # Tự sinh 1.5MB trong RAM Python cục bộ (Agent không thấy chuỗi rác này)
+        return "A" * 1500000
+
+    payloads_data = load_payloads_dict()
+    if category not in payloads_data:
+        raise ValueError(f"Invalid payload category '{category}'. Available: {list(payloads_data.keys())}")
+
+    approved_list = payloads_data[category]
+    if not isinstance(approved_list, list) or len(approved_list) == 0:
+        raise ValueError(f"No approved values in category '{category}'")
+
+    if value is None:
+        return approved_list[0]
+
+    # Kiểm tra value có nằm trong danh sách được duyệt không
+    if value in approved_list:
+        return value
+
+    raise ValueError(f"Payload value not found in approved list for category '{category}'")
+
 
 def validate_method(method: str) -> bool:
     """Kiểm tra phương thức HTTP có nằm trong danh sách được phép hay không.
