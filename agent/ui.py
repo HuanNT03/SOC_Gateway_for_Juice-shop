@@ -17,6 +17,10 @@ import sys
 import json
 import streamlit as st
 from typing import List, Dict, Any
+from dotenv import load_dotenv
+
+# Tự động nạp môi trường từ .env
+load_dotenv()
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from agent.agent import analyze_user_request, generate_proposal, execute_proposal, format_agent_report
