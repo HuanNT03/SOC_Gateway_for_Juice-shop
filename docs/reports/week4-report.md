@@ -206,6 +206,6 @@ sequenceDiagram
 ## 4. Các Vấn Đề Tồn Đọng & Định Hướng Phát Triển
 
 1. **Đánh đổi giữa giới hạn kích thước Response và độ chính xác Redaction**:
-   - Việc cắt response ở mốc 2KB trước khi mờ hóa (mask) có thể vô tình làm đứt ngang chuỗi bí mật (như JWT hoặc Email) ngay tại ranh giới 2048 bytes, khiến Regex không khớp trọn vẹn. Đây là sự đánh đổi cần thiết để chống tấn công cạn kệt bộ nhớ (Zip-bomb / DoS).
+   - Việc cắt response ở mốc 2KB trước khi mờ hóa (mask) có thể vô tình làm đứt ngang chuỗi bí mật (như JWT hoặc Email) ngay tại ranh giới 2048 bytes, khiến Regex không khớp trọn vẹn. Đây là sự đánh đổi cần thiết để chống tấn công cạn kiệt bộ nhớ (Zip-bomb / DoS).
 2. **Cải tiến tham số `oversized_payload`**:
    - Trong các giai đoạn phát triển tiếp theo, khi Agent chỉ đề xuất request, tham số `oversized_payload` có thể chuyển thành dạng tham số boolean trong hàm `send_request` để người dùng dễ dàng tùy chọn sử dụng.
