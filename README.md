@@ -183,12 +183,30 @@ python3 agent/agent.py "<CÂU_LỆNH_KIỂM_THỬ>"
 
 Giao diện trực quan dựa trên Streamlit cho phép người dùng điều khiển Trợ lý AI Security Agent, thực hiện các kịch bản test thủ công và soi nhật ký Audit Log thời gian thực.
 
-### Cú pháp khởi chạy:
+### 🚀 Có 2 Phương Pháp Khởi Chạy UI:
 
-```bash
-streamlit run agent/ui.py
-```
-Sau khi chạy, ứng dụng tự động mở giao diện tại địa chỉ: `http://localhost:8501`.
+#### 1. Phương Pháp 1: Chạy bằng Docker Compose (Khuyên dùng cho Production / Demo)
+* **Khi nào nên dùng**: Khi chạy demo toàn hệ thống hoặc triển khai môi trường chuẩn isolated bằng Docker.
+* **Cú pháp khởi chạy**:
+  ```bash
+  make up
+  ```
+  *(hoặc khởi chạy riêng UI nếu hạ tầng Kong server đã lên: `make up`)*
+* **Cách kết nối & Endpoint**:
+  - Container UI tự động kết nối qua mạng nội bộ Docker `sentinel-net` tới Kong Gateway tại `GATEWAY_HOST=http://gateway:8000`.
+  - Mở trình duyệt truy cập: `http://localhost:8501`.
+  - Khi nhập endpoint trên TAB 1 (AI Agent) hoặc TAB 2 (Manual Tester), bạn chỉ cần điền **đường dẫn tương đối** (VD: `/api/Quantitys`, `/rest/admin/application-version`).
+
+#### 2. Phương Pháp 2: Chạy trực tiếp từ Host Terminal (Khuyên dùng khi Dev / Debug giao diện)
+* **Khi nào nên dùng**: Khi bạn đang phát triển mã nguồn, muốn chỉnh sửa `agent/ui.py` hoặc debug nhanh cục bộ trên máy host mà không cần Rebuild lại Docker image.
+* **Cú pháp khởi chạy**:
+  ```bash
+  streamlit run agent/ui.py
+  ```
+* **Cách kết nối & Endpoint**:
+  - Khi chạy trực tiếp trên máy host, Tool tự động kết nối tới Kong Gateway trên Host qua cổng `http://localhost:8000`.
+  - Nếu muốn chỉ định host khác, bạn có thể thiết lập trước khi chạy: `export GATEWAY_HOST=http://localhost:8000`.
+  - Khi nhập endpoint trên giao diện, bạn điền **đường dẫn tương đối** (VD: `/api/Quantitys`, `/rest/products/search`) hoặc URL đầy đủ `http://localhost:8000/api/Quantitys`.
 
 ---
 
