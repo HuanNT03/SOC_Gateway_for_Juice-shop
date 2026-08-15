@@ -41,7 +41,7 @@ from logger import log_audit_event
 
 # Phương thức HTTP được phép theo chính sách an toàn
 ALLOWED_METHODS = {"GET", "POST", "OPTIONS"}
-DEFAULT_GATEWAY_HOST = "http://localhost:8000"
+DEFAULT_GATEWAY_HOST = os.getenv("GATEWAY_HOST", "http://localhost:8000")
 DEFAULT_TIMEOUT = 7.0  # 7 giây (5s Kong timeout + 2s buffer margin)
 MAX_RESPONSE_BYTES = 2048  # 2KB
 
