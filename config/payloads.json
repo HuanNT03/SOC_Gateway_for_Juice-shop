@@ -6,7 +6,8 @@
   "special_chars": [
     "' \" < > & ; --",
     "<script>alert(1)</script>",
-    "'; SELECT 1;--"
+    "'; SELECT 1;--",
+    "!@#$%^&*()_+-=[]{}\\|;:'\",.<>/?~"
   ],
   "empty_values": [
     "",
@@ -15,11 +16,15 @@
   ],
   "type_mismatch": [
     {"quantity": "invalid_string"},
-    {"email": 99999}
+    {"email": 99999},
+    {"length": 999999999999},
+    {"_id": "1"}
   ],
   "query_param_injection": [
     "' OR 1=1",
+    "' OR 1=1--",
     "<img src=x>",
+    "<script>alert(1)</script>",
     "%00",
     "q=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
   ],
