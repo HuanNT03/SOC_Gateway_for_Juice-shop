@@ -44,15 +44,16 @@ class TestSecurityAgent(unittest.TestCase):
         self.assertIn("url", proposal)
         self.assertIn("method", proposal)
 
+    @patch("agent.agent.analyze_burst_test_with_llm", return_value=None)
     @patch("agent.agent.analyze_response_with_llm", return_value=None)
-    def test_format_agent_report_mindset_guardrails(self, mock_llm_analysis):
-        """Kiểm thử báo cáo an ninh theo Mindset Guardrails cho mã 413, 429, 403."""
+    def test_format_agent_report_mindset_guardrails(self, mock_llm_analysis, mock_burst_analysis):
+        """Kiểm thử báo cáo an ninh theo Mindset Guardrails cho mã 413, 429, 403 và Burst Test."""
         # 413 Payload Too Large
         report_413 = format_agent_report({"status_code": 413, "endpoint": "/api/Quantitys", "body": "Too Large"})
         self.assertIn("đúng thiết kế", report_413.lower())
         self.assertIn("413", report_413)
 
-        # 429 Too Many Requests
+        # 429 Too Many Requests (Single Request)
         report_429 = format_agent_report({"status_code": 429, "endpoint": "/api/Quantitys", "body": "Rate Limit Exceeded"})
         self.assertIn("đúng thiết kế", report_429.lower())
         self.assertIn("rate-limiting", report_429.lower())
@@ -61,6 +62,16 @@ class TestSecurityAgent(unittest.TestCase):
         report_403 = format_agent_report({"status_code": 403, "endpoint": "/rest/admin/app", "body": "Forbidden"})
         self.assertIn("đúng thiết kế", report_403.lower())
         self.assertIn("acl", report_403.lower())
+
+        # Burst Rate Limit Test (25 requests)
+        burst_result = {
+            "total_sent": 25,
+            "status_counts": {200: 20, 429: 5},
+            "responses": [{"status_code": 200, "endpoint": "/api/Quantitys", "method": "GET"}]
+        }
+        report_burst = format_agent_report(burst_result)
+        self.assertIn("đúng thiết kế", report_burst.lower())
+        self.assertIn("rate-limiting", report_burst.lower())
 
 
 if __name__ == "__main__":

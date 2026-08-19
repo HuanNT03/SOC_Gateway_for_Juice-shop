@@ -353,6 +353,57 @@ def analyze_response_with_llm(
         return None
 
 
+def analyze_burst_test_with_llm(
+    endpoint: str,
+    method: str,
+    total_sent: int,
+    status_counts: Dict[Any, int],
+    sample_body: str = ""
+) -> Optional[str]:
+    """Gửi kết quả Burst Rate Limit Test cho Real LLM để phân tích an ninh chuyên sâu."""
+    if not AI_AGENT_API_KEY:
+        return None
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(
+            api_key=AI_AGENT_API_KEY,
+            base_url=AI_AGENT_BASE_URL
+        )
+
+        system_prompt = _load_system_prompt()
+        sanitized_sample = sanitize_untrusted_response(sample_body) if sample_body else ""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"Hãy đưa ra báo cáo phân tích an ninh chuyên sâu cho bài kiểm thử Tải / Giới hạn tốc độ (Burst Rate Limit Test):\n"
+                    f"- Mục tiêu: {method} {endpoint}\n"
+                    f"- Tổng số request đã gửi liên tiếp: {total_sent}\n"
+                    f"- Phân bố mã phản hồi HTTP thu được: {json.dumps(status_counts)}\n"
+                    f"- Mẫu phản hồi từ Gateway:\n{sanitized_sample}\n\n"
+                    f"Hãy đánh giá hiệu quả của chính sách Rate Limiting (Mã 429 Too Many Requests là thành công đúng thiết kế của Gateway), "
+                    f"phân tích khả năng chống tấn công từ chối dịch vụ (DoS/Brute-force) và đưa ra kết luận an ninh."
+                )
+            }
+        ]
+
+        sanitized_messages = sanitize_llm_messages(messages)
+
+        response = client.chat.completions.create(
+            model=AI_AGENT_MODEL,
+            messages=sanitized_messages,
+            temperature=0.2
+        )
+
+        return response.choices[0].message.content
+    except Exception as err:
+        print(f"[LLM BURST ANALYSIS WARNING] Falling back to rule-based report: {err}")
+        return None
+
+
 def format_agent_report(result: Dict[str, Any]) -> str:
     """Tổng hợp báo cáo đánh giá an ninh (Ưu tiên Real LLM Dynamic Analysis, Fallback Rule-based)."""
     if result.get("is_direct_injection_blocked"):
@@ -361,8 +412,31 @@ def format_agent_report(result: Dict[str, Any]) -> str:
     if "total_sent" in result:
         total = result["total_sent"]
         counts = result.get("status_counts", {})
+        responses = result.get("responses", [])
+        sample_body = ""
+        endpoint = "/api/Quantitys"
+        method = "GET"
+        if responses:
+            first_resp = responses[0]
+            endpoint = first_resp.get("endpoint", endpoint)
+            method = first_resp.get("method", method)
+            # Lấy mẫu response của mã 429 nếu có, hoặc response đầu tiên
+            for r in responses:
+                if r.get("status_code") == 429:
+                    sample_body = str(r.get("body", ""))
+                    break
+            if not sample_body:
+                sample_body = str(first_resp.get("body", ""))
+
+        # Thử phân tích bằng Real LLM nếu có API Key
+        if AI_AGENT_API_KEY:
+            llm_burst_report = analyze_burst_test_with_llm(endpoint, method, total, counts, sample_body)
+            if llm_burst_report:
+                return llm_burst_report
+
+        # Rule-based fallback
         report_lines = [
-            f"📊 **BÁO CÁO BURST RATE LIMIT TEST**",
+            f"📊 **BÁO CÁO BURST RATE LIMIT TEST (Rule-based Fallback)**",
             f"- **Tổng request đã gửi**: {total}",
             f"- **Phân bố Mã Trạng Thái HTTP**: {json.dumps(counts)}",
         ]
