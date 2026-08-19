@@ -1,9 +1,4 @@
-# Báo Cáo Kỹ Thuật Tuần 5: AI Security Agent & Guardrails Governance
-
-**Dự án**: Project Sentinel - DevSecOps & AI Gateway  
-**Mục tiêu**: Xây dựng khung quản trị và an toàn toàn diện cho AI Security Agent (Qwen) kết nối Kong API Gateway (v3.6) và OWASP Juice Shop: Khử khuẩn PII/Secrets, Phòng vệ Prompt Injection 2 chiều, Phê duyệt Human-in-the-Loop (HITL), Dashboard 4 Tabs và Tự động hóa Makefile.
-
----
+# Báo Cáo Kỹ Thuật Tuần 5: Guardrails, phê duyệt thủ công và che dữ liệu nhạy cảm
 
 ## 🗺️ 1. Sơ Đồ Luồng Hoạt Động End-to-End (Data Flow)
 
@@ -86,21 +81,3 @@ flowchart TD
 
 ---
 
-## 🧪 3. Kết Quả Kiểm Thử Toàn Diện (Master Test Suite)
-
-Hệ thống sở hữu bộ kiểm thử tự động gồm **40 unit test cases** bao phủ 100% chức năng:
-
-| Module Kiểm Thử | Tệp Kiểm Thử | Số Tests | Kết Quả | Thời Gian |
-|---|---|:---:|:---:|:---:|
-| **Advanced PII & Data Masking** | `tests/test_advanced_redactor.py` & `test_redactor.py` | 9 | ✅ PASS | 0.002s |
-| **Prompt Injection Defense** | `tests/test_prompt_injection.py` | 6 | ✅ PASS | 0.002s |
-| **Human-in-the-Loop Governance** | `tests/test_human_approval.py` | 6 | ✅ PASS | 0.003s |
-| **AI Agent Logic & Real LLM** | `tests/test_agent.py` | 6 | ✅ PASS | 0.002s |
-| **Safe Requester Core & Payloads**| `tests/test_safe_requester.py` & `test_payload_handler.py` | 9 | ✅ PASS | 0.006s |
-| **Audit Logger Engine & UI Helpers** | `tests/test_logger.py` & `test_ui.py` | 4 | ✅ PASS | 0.004s |
-| **TỔNG CỘNG** | **9 Test Files** | **40 Tests** | **✅ 100% PASS** | **0.020s** |
-
----
-
-## 🎯 4. Kết Luận
-Project Sentinel Tuần 5 đã hoàn thiện mô hình **AI Gateway Guardrails & Governance** chuẩn mực: Bảo mật dữ liệu nhạy cảm ➔ Phòng vệ tấn công AI ➔ Kiểm soát quyền thực thi với con người ➔ Giám sát toàn diện.
