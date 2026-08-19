@@ -161,18 +161,17 @@ tail -n 5 logs/gateway_audit.jsonl
 ├────────────────────────┬────────────────────────┬─────────────────────┬────────────────┤
 │ 🤖 Tab 1: AI Agent     │ ⚡ Tab 2: Manual Tester│ 📜 Tab 3: Audit Logs│ 🛡️ Tab 4: Guard│
 │ • HITL Approval Card   │ • Custom HTTP Probe    │ • 100% Masked PII   │ • Live PII Test│
-│ • Real LLM Dynamic Rep │ • Pre-send Risk Check  │ • Status Badges     │ • HITL History │
-│ • Live Probe Preset    │ • Burst Rate Limiting  │ • JSON Viewer       │ • Inviolable   │
+│ • Real LLM Dynamic Rep │ • Pre-send Risk Check  │ • Status Badges     │ • Live Probe   │
+│ • 4 Core Test Presets  │ • Burst Rate Limiting  │ • JSON Viewer       │ • HITL History │
 └────────────────────────┴────────────────────────┴─────────────────────┴────────────────┘
 ```
 
 1. **Tab 1: 🤖 AI Security Agent**:
-   - Nhập câu lệnh kiểm thử tự nhiên hoặc bấm các nút Preset mẫu:
+   - Nhập câu lệnh kiểm thử tự nhiên hoặc bấm 4 nút Preset chuẩn:
      - `🔥 Rate Limit Test`: Kiểm tra giới hạn 30 requests.
      - `🚫 Forbidden ACL Test`: Kiểm tra endpoint `/rest/admin/application-version`.
      - `📦 1.5MB Oversized Test`: Kiểm tra payload ngoại cỡ.
      - `💉 Special Chars Probe`: Thăm dò ký tự đặc biệt.
-     - `🛡️ Live Injection & PII Probe`: Thử nghiệm Live Prompt Injection + PII.
    - Nhấn **`🚀 Phân Tích & Đề Xuất`**:
      - Nếu kịch bản có mức độ rủi ro `MEDIUM` hoặc `HIGH`, giao diện xuất hiện **Thẻ Cảnh Báo Phê Duyệt Rủi Ro (HITL Card)** màu vàng/viền đỏ.
      - Bấm **`✅ Phê Duyệt & Thực Thi (Approve)`**: Gửi request qua Gateway và hiển thị phân tích Real LLM.
@@ -188,9 +187,12 @@ tail -n 5 logs/gateway_audit.jsonl
    - Mở từng bản ghi để đối soát Request/Response Headers và Body Snippet đã được che 100% PII.
 
 4. **Tab 4: 🛡️ Guardrails & Safety Inspector**:
-   - **Khu vực 1 - Live PII & Injection Tester**: Nhập chuỗi văn bản tự do chứa SĐT, Thẻ tín dụng, Email, Password hoặc Prompt Injection và bấm **`🔍 Quét & Khử Khuẩn Ngay`** để đối soát Before vs After.
-   - **Khu vực 2 - HITL Decision History**: Xem bảng thống kê tất cả các quyết định `APPROVED` hoặc `REJECTED_BY_USER` trong phiên.
-   - **Khu vực 3 - Active Guardrails Rules**: Đọc các quy tắc bất biến trong `agent/system_prompt.txt`.
+   - **Khu vực 1 - Live PII & Input Redactor Tester**: Nhập chuỗi văn bản tự do chứa SĐT, Thẻ tín dụng, Email, Password và bấm **`🔍 Quét & Khử Khuẩn Văn Bản`** để đối soát Before vs After.
+   - **Khu vực 2 - Live Prompt Injection & PII Probe**:
+     - Cho phép nhập/chỉnh sửa nội dung HTTP Response tùy ý (hoặc bấm **`🔄 Nạp Phản Hồi Mẫu Mặc Định`**).
+     - Bấm **`🚀 Chạy Kiểm Thử Live AI Agent Phản Hồi`**: Quan sát chuỗi xử lý 4 chặng: *Khử khuẩn PII ➔ Guardrail cảnh báo ➔ Đóng khung XML ranh giới ➔ Báo cáo phân tích an ninh động thực tế từ Real LLM Agent (Qwen)*.
+   - **Khu vực 3 - HITL Decision History**: Xem bảng thống kê tất cả các quyết định `APPROVED` hoặc `REJECTED_BY_USER` trong phiên.
+   - **Khu vực 4 - Active Guardrails Rules**: Đọc các quy tắc bất biến trong `agent/system_prompt.txt`.
 
 ---
 

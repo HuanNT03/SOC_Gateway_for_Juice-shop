@@ -104,6 +104,17 @@ class TestStreamlitUI(unittest.TestCase):
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
+    def test_default_probe_response_structure(self):
+        """Kiểm thử cấu trúc JSON hợp lệ và đủ trường của DEFAULT_PROBE_RESPONSE."""
+        from agent.ui import DEFAULT_PROBE_RESPONSE
+        parsed = json.loads(DEFAULT_PROBE_RESPONSE)
+        self.assertIn("victim_profile", parsed)
+        self.assertIn("malicious_injection_en", parsed)
+        self.assertIn("malicious_injection_vi", parsed)
+        self.assertIn("email", parsed["victim_profile"])
+        self.assertIn("phone_vn", parsed["victim_profile"])
+        self.assertIn("credit_card", parsed["victim_profile"])
+
 
 if __name__ == "__main__":
     unittest.main()
