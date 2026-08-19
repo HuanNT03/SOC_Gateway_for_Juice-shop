@@ -5,6 +5,7 @@ File: tests/test_agent.py
 """
 
 import unittest
+from unittest.mock import patch
 import sys
 import os
 
@@ -35,14 +36,16 @@ class TestSecurityAgent(unittest.TestCase):
         scenario = analyze_user_request("Thử chèn ký tự đặc biệt <script>alert(1)</script> vào search")
         self.assertEqual(scenario, "special_chars")
 
-    def test_generate_proposal_structure(self):
+    @patch("agent.agent.generate_proposal_llm", return_value=None)
+    def test_generate_proposal_structure(self, mock_llm):
         """Kiểm thử cấu trúc đề xuất kịch bản kiểm thử từ payloads.json."""
         proposal = generate_proposal("special_chars")
         self.assertEqual(proposal["payload_category"], "special_chars")
         self.assertIn("url", proposal)
         self.assertIn("method", proposal)
 
-    def test_format_agent_report_mindset_guardrails(self):
+    @patch("agent.agent.analyze_response_with_llm", return_value=None)
+    def test_format_agent_report_mindset_guardrails(self, mock_llm_analysis):
         """Kiểm thử báo cáo an ninh theo Mindset Guardrails cho mã 413, 429, 403."""
         # 413 Payload Too Large
         report_413 = format_agent_report({"status_code": 413, "endpoint": "/api/Quantitys", "body": "Too Large"})
