@@ -27,6 +27,7 @@ load_dotenv()
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from tools.safe_requester import send_request, burst_test, resolve_safe_payload, load_payloads_dict, TOOL_SCHEMA
+from tools.redactor import sanitize_llm_messages, mask_sensitive_data
 
 # Đọc cấu hình LLM từ môi trường
 AI_AGENT_API_KEY = os.getenv("AI_AGENT_API_KEY", "").strip()
@@ -93,6 +94,9 @@ def generate_proposal_llm(user_prompt: str) -> Optional[Dict[str, Any]]:
             {"role": "user", "content": f"Hãy đề xuất kịch bản kiểm thử cho yêu cầu sau: {user_prompt}"}
         ]
 
+        # Khử khuẩn triệt để toàn bộ messages (loại bỏ PII, secret, API keys) trước khi gửi ra ngoài
+        sanitized_messages = sanitize_llm_messages(messages)
+
         tools_spec = [
             {
                 "type": "function",
@@ -102,7 +106,7 @@ def generate_proposal_llm(user_prompt: str) -> Optional[Dict[str, Any]]:
 
         response = client.chat.completions.create(
             model=AI_AGENT_MODEL,
-            messages=messages,
+            messages=sanitized_messages,
             tools=tools_spec,
             tool_choice="auto",
             temperature=0.1

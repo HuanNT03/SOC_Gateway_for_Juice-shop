@@ -3,8 +3,13 @@ Project Sentinel - DevSecOps & AI Gateway
 Module: Redactor Engine (tools/redactor.py)
 
 Mục đích:
-    Cung cấp cơ chế lọc và che giấu tự động các thông tin nhạy cảm (API Keys, JWT Tokens, Passwords, Session Cookies, Emails)
-    từ dữ liệu Request/Response Headers và Body trước khi ghi log Audit hoặc trả về cho Agent/User.
+    Cung cấp cơ chế lọc và che giấu tự động các thông tin nhạy cảm:
+    - API Keys, JWT Tokens, Passwords, Session Cookies, Emails.
+    - Số điện thoại di động Việt Nam và quốc tế (Phone numbers).
+    - Thông tin định danh cá nhân PII (Số CCCD 12 số, CMND 9 số).
+    - Số thẻ thanh toán quốc tế (Credit Card / PAN).
+    - Chuỗi gán mật khẩu & secret nội dòng (Inline credentials & Connection strings).
+    - Khử khuẩn dữ liệu trước khi gửi sang LLM Cloud API (OpenAI/Qwen) và trước khi ghi log Audit.
 
 Đầu vào (Inputs):
     data (dict | list | str | Any): Dữ liệu bất kỳ cần làm sạch (Dict lồng nhau, List, hoặc Chuỗi văn bản).
@@ -15,12 +20,13 @@ Mục đích:
 Xử lý Edge Cases:
     - Dict/List lồng nhau nhiều tầng (Nested JSON): Sử dụng thuật toán đệ quy (Recursive Processing).
     - Không phân biệt chữ hoa/thường cho các Headers/Key tên trường.
-    - JWT Token đứng một mình trong chuỗi JSON body (3 đoạn base64url nối bằng dấu .).
+    - Token và secret nội dòng trong chuỗi tự do (VD: password=abc, db://user:pass@host).
+    - Thứ tự ưu tiên Regex: Authorization Bearer -> JWT -> Credit Card -> PII -> Phone -> Email -> Inline Secret.
 """
 
 import re
 import copy
-from typing import Any
+from typing import Any, List, Dict
 
 # Danh sách từ khóa tên trường / Header được coi là nhạy cảm (Case-insensitive)
 SENSITIVE_KEYS = {
@@ -34,33 +40,88 @@ SENSITIVE_KEYS = {
     "cookie",
 }
 
-# Pattern Regex nhận diện Email
-EMAIL_REGEX = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
+# 1. Pattern Regex nhận diện Header Authorization Bearer JWT
+BEARER_JWT_REGEX = re.compile(r'Bearer\s+[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b', re.IGNORECASE)
 
-# Pattern Regex nhận diện JWT Token (3 đoạn base64url phân tách bởi dấu chấm, độ dài tối thiểu 4 ký tự mỗi đoạn)
+# 2. Pattern Regex nhận diện JWT Token (3 đoạn base64url phân tách bởi dấu chấm)
 JWT_REGEX = re.compile(r'\b[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b')
 
-# Pattern Regex nhận diện Header Authorization Bearer JWT
-BEARER_JWT_REGEX = re.compile(r'Bearer\s+[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b', re.IGNORECASE)
+# 3. Pattern Regex nhận diện Thẻ thanh toán quốc tế (Visa, Mastercard, AMEX - 13 đến 19 chữ số hoặc dạng nhóm 4 số)
+CREDIT_CARD_REGEX = re.compile(
+    r'\b(?:\d{4}[-\s]){3}\d{4}\b|'
+    r'\b(?:4\d{12}(?:\d{3})?|5[1-5]\d{14}|6(?:011|5\d{2})\d{12}|3[47]\d{13}|35\d{14})\b'
+)
+
+# 4. Pattern Regex nhận diện Thông tin định danh cá nhân PII (Số CCCD 12 số hoặc CMND 9 số)
+PII_REGEX = re.compile(r'\b\d{12}\b|\b\d{9}\b')
+
+# 5. Pattern Regex nhận diện Số điện thoại (VN Mobile 10 số đầu 03/05/07/08/09, Quốc tế +84/Global, Landline)
+PHONE_REGEX = re.compile(
+    r'(?:\+84(?:[\s.-]?\d){9}\b)|'
+    r'(?:\b0[35789](?:[\s.-]?\d){8}\b)|'
+    r'(?:\(\d{2,4}\)[\s.-]?\d{3,4}[\s.-]?\d{4}\b)|'
+    r'(?:\+\d{1,3}[\s.-]?\(?\d{2,4}\)?[\s.-]?\d{3,4}[\s.-]?\d{3,4}\b)'
+)
+
+# 6. Pattern Regex nhận diện Email
+EMAIL_REGEX = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
+
+# 7. Pattern Regex nhận diện Mật khẩu & Token gán trực tiếp trong văn bản (key=value)
+INLINE_SECRET_REGEX = re.compile(
+    r'(?i)\b(password|passwd|pass|token|secret|api[_-]?key|client[_-]?secret)\s*([:=])\s*([\'"][^\'"\r\n]+[\'"]|[^\s,;&\}\]]+)'
+)
+
+# 8. Pattern Regex nhận diện URI Connection String chứa user:password
+URI_CREDENTIAL_REGEX = re.compile(
+    r'(?i)\b([a-z][a-z0-9+.-]*://)([^:@\s]+):([^@\s]+)@'
+)
 
 
 def _mask_string(text: str) -> str:
-    """Hàm phụ trợ: Quét và làm sạch các pattern nhạy cảm trong chuỗi văn bản tự do.
+    """Hàm phụ trợ: Quét và làm sạch toàn diện các pattern nhạy cảm trong chuỗi văn bản tự do.
 
     Inputs:
         text (str): Chuỗi đầu vào cần quét.
 
     Outputs:
-        str: Chuỗi đã được ẩn các thông tin Email và JWT.
+        str: Chuỗi đã được ẩn thông tin JWT, Credit Card, PII, SĐT, Email, và Secret nội dòng.
     """
     if not isinstance(text, str):
         return text
 
-    # Che Authorization Bearer JWT trước
+    # 1. Che Authorization Bearer JWT trước
     text = BEARER_JWT_REGEX.sub("Bearer [REDACTED_JWT]", text)
-    # Che JWT thuần 3 đoạn
+    
+    # 2. Che JWT thuần 3 đoạn
     text = JWT_REGEX.sub("[REDACTED_JWT]", text)
-    # Che Email
+    
+    # 3. Che URI Connection String (VD: postgres://user:pass@host)
+    text = URI_CREDENTIAL_REGEX.sub(r'\1\2:[REDACTED_PASSWORD]@', text)
+
+    # 4. Che Inline key=value secrets (VD: password=abc, api_key=xyz)
+    def _replace_inline_secret(match: re.Match) -> str:
+        key_name = match.group(1)
+        separator = match.group(2)
+        lower_key = key_name.lower()
+        if "pass" in lower_key:
+            return f"{key_name}{separator}[REDACTED_PASSWORD]"
+        elif "token" in lower_key:
+            return f"{key_name}{separator}[REDACTED_TOKEN]"
+        else:
+            return f"{key_name}{separator}[REDACTED_SECRET]"
+
+    text = INLINE_SECRET_REGEX.sub(_replace_inline_secret, text)
+
+    # 5. Che Thẻ tín dụng
+    text = CREDIT_CARD_REGEX.sub("[REDACTED_CREDIT_CARD]", text)
+
+    # 6. Che Số điện thoại
+    text = PHONE_REGEX.sub("[REDACTED_PHONE]", text)
+
+    # 7. Che PII (CCCD/CMND)
+    text = PII_REGEX.sub("[REDACTED_PII]", text)
+
+    # 8. Che Email
     text = EMAIL_REGEX.sub("[REDACTED_EMAIL]", text)
 
     return text
@@ -105,3 +166,32 @@ def mask_sensitive_data(data: Any) -> Any:
 
     # Các kiểu dữ liệu nguyên thủy giữ nguyên (int, float, bool)
     return data
+
+
+def sanitize_llm_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Làm sạch và khử khuẩn 100% ngữ cảnh hội thoại trước khi gửi sang LLM Provider.
+
+    Inputs:
+        messages (list[dict]): Danh sách tin nhắn theo định dạng OpenAI format
+                               (gồm role, content, tool_calls, v.v.).
+
+    Outputs:
+        list[dict]: Danh sách tin nhắn đã được làm sạch mọi dữ liệu nhạy cảm PII và Secret.
+    """
+    if not isinstance(messages, list):
+        return messages
+
+    sanitized_messages = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            sanitized_messages.append(mask_sensitive_data(msg))
+            continue
+
+        clean_msg = copy.deepcopy(msg)
+        for field in ["content", "tool_calls", "function_call"]:
+            if field in clean_msg and clean_msg[field] is not None:
+                clean_msg[field] = mask_sensitive_data(clean_msg[field])
+
+        sanitized_messages.append(clean_msg)
+
+    return sanitized_messages
