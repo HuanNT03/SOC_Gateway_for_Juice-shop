@@ -36,12 +36,16 @@ Trong Plan 8, AI Security Agent đã được trang bị **Động cơ Đánh gi
 ## 🛡️ 2. Các Thành Phần Kỹ Thuật Đã Xây Dựng
 
 ### 2.1. Động Cơ Phân Loại Rủi Ro Request (`assess_request_risk` trong `tools/safe_requester.py`)
-- Phân tích đa tiêu chí để đánh giá mức độ rủi ro trước khi thực thi:
-  1. **Phương thức HTTP**: Các phương thức thay đổi trạng thái dữ liệu (`POST`, `PUT`, `DELETE`, `PATCH`) ➔ `MEDIUM` Risk.
+- Phân tích đa tiêu chí để đánh giá mức độ rủi ro và xác định yêu cầu phê duyệt trước khi thực thi:
+  1. **Phương thức HTTP**:
+     - Các phương thức chỉ đọc (`GET`, `OPTIONS`) trên endpoint hợp lệ ➔ `LOW` Risk (`requires_approval = False`).
+     - Các phương thức thay đổi trạng thái dữ liệu (`POST`, `PUT`, `DELETE`, `PATCH`) ➔ `MEDIUM` Risk (`requires_approval = True`).
   2. **Dung lượng & Phân loại Payload**:
-     - `oversized_payload` (Dữ liệu ~1.5MB) ➔ `HIGH` Risk (Nguy cơ nghẽn RAM / Băng thông).
-     - `special_chars`, `query_param_injection` ➔ `MEDIUM` Risk (Thăm dò lỗ hổng).
-  3. **Lưu lượng Burst Test**: `count > 10` requests liên tiếp ➔ `HIGH` Risk (Nguy cơ DoS / Rate Limit).
+     - `oversized_payload` (Dữ liệu ngoại cỡ ~1.5MB sinh trong RAM) ➔ `HIGH` Risk (`requires_approval = True`) do nguy cơ chiếm dụng tài nguyên/băng thông Gateway.
+     - `special_chars`, `query_param_injection` (Payload thăm dò lỗ hổng) ➔ `MEDIUM` Risk (`requires_approval = True`).
+  3. **Lưu lượng Burst Test**:
+     - `10 < count <= 20` requests liên tiếp ➔ `MEDIUM` Risk (`requires_approval = True`).
+     - `count > 20` requests liên tiếp (ví dụ: Burst Test 25 requests) ➔ `HIGH` Risk (`requires_approval = True`) do nguy cơ kích hoạt Rate Limiting và gây nghẽn dịch vụ.
 - Trả về cấu trúc chi tiết: `requires_approval` (bool), `risk_level` ("LOW" | "MEDIUM" | "HIGH"), `risk_factors` (danh sách lý do), `purpose` (mục đích kiểm thử).
 
 ---
