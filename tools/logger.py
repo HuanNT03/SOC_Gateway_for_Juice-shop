@@ -29,7 +29,7 @@ Xử lý Edge Cases:
 import os
 import json
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 try:
     from redactor import mask_sensitive_data
 except ImportError:
@@ -48,7 +48,8 @@ def log_audit_event(
     response_headers: Dict[str, Any],
     response_body_snippet: Any,
     duration_ms: float,
-    log_file: str = DEFAULT_LOG_FILE
+    log_file: str = DEFAULT_LOG_FILE,
+    approval_status: Optional[str] = None
 ) -> Dict[str, Any]:
     """Tạo và ghi 1 dòng JSONL Audit record an toàn vào file log.
 
@@ -69,6 +70,9 @@ def log_audit_event(
         "response_body_snippet": masked_res_body,
         "duration_ms": round(duration_ms, 2)
     }
+
+    if approval_status:
+        audit_entry["approval_status"] = approval_status
 
     # Đảm bảo thư mục đích tồn tại
     log_dir = os.path.dirname(os.path.abspath(log_file))

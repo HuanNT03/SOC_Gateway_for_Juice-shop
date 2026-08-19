@@ -150,6 +150,124 @@ def resolve_safe_payload(category: str, value: Optional[str] = None) -> Any:
     raise ValueError(f"Payload value not found in approved list for category '{category}'")
 
 
+def assess_request_risk(
+    method: str,
+    url: str,
+    payload_category: Optional[str] = "long_string",
+    count: int = 1
+) -> Dict[str, Any]:
+    """Đánh giá mức độ rủi ro của request và xác định có cần phê duyệt của con người (HITL) hay không.
+
+    Inputs:
+        method (str): Phương thức HTTP ("GET", "POST", "PUT", "DELETE", v.v.).
+        url (str): Endpoint mục tiêu.
+        payload_category (str, optional): Phân loại payload an toàn. Mặc định "long_string".
+        count (int, optional): Số lượng request dự kiến gửi liên tiếp. Mặc định 1.
+
+    Outputs:
+        dict: {
+            "requires_approval": bool,
+            "risk_level": "LOW" | "MEDIUM" | "HIGH",
+            "risk_factors": list[str],
+            "endpoint": str,
+            "method": str,
+            "payload_category": str,
+            "count": int,
+            "purpose": str
+        }
+    """
+    method_upper = (method or "GET").strip().upper()
+    cat = (payload_category or "long_string").strip().lower()
+    risk_factors = []
+
+    # 1. Kiểm tra phương thức HTTP thay đổi dữ liệu hoặc có rủi ro
+    if method_upper in ["POST", "PUT", "DELETE", "PATCH"]:
+        risk_factors.append(f"Phương thức HTTP '{method_upper}' có khả năng tạo/thay đổi trạng thái dữ liệu trên server")
+
+    # 2. Kiểm tra nhóm Payload đặc biệt
+    if cat == "oversized_payload":
+        risk_factors.append("Payload ngoại cỡ (oversized_payload ~1.5MB) có thể gây áp lực băng thông và tài nguyên bộ nhớ Gateway")
+    elif cat in ["special_chars", "query_param_injection"]:
+        risk_factors.append(f"Nhóm payload '{cat}' chứa chuỗi thăm dò ký tự đặc biệt / injection")
+
+    # 3. Kiểm tra Burst Test lưu lượng lớn
+    if count > 10:
+        risk_factors.append(f"Gửi burst test tần suất cao ({count} requests) có thể kích hoạt Rate Limiter hoặc gây nghẽn dịch vụ")
+
+    # Đánh giá mức độ rủi ro tổng hợp
+    if cat == "oversized_payload" or count > 20:
+        risk_level = "HIGH"
+        requires_approval = True
+    elif len(risk_factors) > 0:
+        risk_level = "MEDIUM"
+        requires_approval = True
+    else:
+        risk_level = "LOW"
+        requires_approval = False
+
+    # Xác định mục đích kiểm thử
+    if cat == "oversized_payload":
+        purpose = "Kiểm chứng Gateway chặn 413 Payload Too Large khi nhận dữ liệu ngoại cỡ > 1MB"
+    elif count > 1:
+        purpose = f"Kiểm chứng Gateway kích hoạt 429 Too Many Requests khi gửi {count} requests liên tiếp"
+    elif "admin" in url.lower() or "application-version" in url.lower():
+        purpose = "Kiểm chứng Gateway chặn 403 Forbidden theo danh sách ACL Allowlist"
+    else:
+        purpose = f"Kiểm thử an toàn kết nối API Gateway ({method_upper} {url})"
+
+    return {
+        "requires_approval": requires_approval,
+        "risk_level": risk_level,
+        "risk_factors": risk_factors,
+        "endpoint": url,
+        "method": method_upper,
+        "payload_category": cat,
+        "count": count,
+        "purpose": purpose
+    }
+
+
+def prompt_cli_approval(assessment: Dict[str, Any], auto_approve: bool = False) -> bool:
+    """Hiển thị hộp thoại hỏi ý kiến phê duyệt trên giao diện dòng lệnh (CLI).
+
+    Inputs:
+        assessment (dict): Kết quả phân tích rủi ro từ assess_request_risk.
+        auto_approve (bool, optional): Tự động phê duyệt (cho môi trường kiểm thử/CI).
+
+    Outputs:
+        bool: True nếu chấp thuận (y/Y hoặc auto-approve), False nếu từ chối (n/N/Enter/Timeout).
+    """
+    # Kiểm tra cờ tự động phê duyệt từ tham số hoặc biến môi trường CI_MODE/AUTO_APPROVE
+    if auto_approve or os.getenv("CI_MODE", "").lower() == "true" or os.getenv("AUTO_APPROVE", "").lower() == "true":
+        print(f"\n[HITL AUTO-APPROVED] Yêu cầu '{assessment['method']} {assessment['endpoint']}' được tự động phê duyệt (CI/Testing Mode).")
+        return True
+
+    print("\n" + "=" * 70)
+    print("⚠️  [HUMAN-IN-THE-LOOP] YÊU CẦU PHÊ DUYỆT HÀNH ĐỘNG RỦI RO")
+    print("=" * 70)
+    print(f"- Mục tiêu kiểm thử:   {assessment['method']} {assessment['endpoint']}")
+    print(f"- Nhóm Payload:        {assessment['payload_category']}")
+    print(f"- Số lượng request:    {assessment['count']}")
+    print(f"- Mục đích kiểm tra:   {assessment['purpose']}")
+    print(f"- Mức độ rủi ro:       {assessment['risk_level']}")
+    print("- Các yếu tố rủi ro:")
+    for factor in assessment.get("risk_factors", []):
+        print(f"   • {factor}")
+    print("-" * 70)
+
+    try:
+        user_choice = input("👉 Bạn có CHẤP THUẬN gửi request này không? (y/N): ").strip().lower()
+        if user_choice in ["y", "yes"]:
+            print("✅ [HITL APPROVED] Người dùng đã phê duyệt. Bắt đầu gửi request...\n")
+            return True
+        else:
+            print("🛑 [HITL REJECTED] Người dùng đã TỪ CHỐI thực thi. Hủy bỏ request an toàn.\n")
+            return False
+    except (EOFError, KeyboardInterrupt):
+        print("\n🛑 [HITL REJECTED] Ngắt tương tác (Default to Reject).\n")
+        return False
+
+
 def validate_method(method: str) -> bool:
     """Kiểm tra phương thức HTTP có nằm trong danh sách được phép hay không.
 
@@ -187,7 +305,8 @@ def send_request(
     headers: Optional[Dict[str, str]] = None,
     payload: Optional[Any] = None,
     timeout: float = DEFAULT_TIMEOUT,
-    log_file: Optional[str] = None
+    log_file: Optional[str] = None,
+    approval_status: Optional[str] = None
 ) -> Dict[str, Any]:
     """Gửi HTTP request an toàn qua Gateway, tự động tiêm secret, cắt gọn response và ghi log.
 
@@ -253,30 +372,23 @@ def send_request(
         status_code = resp.status_code
         response_headers = dict(resp.headers)
 
-        # Đọc dữ liệu theo luồng iter_content(2048) để giải nén gzip an toàn
-        chunks = []
-        bytes_read = 0
-        for chunk in resp.iter_content(chunk_size=MAX_RESPONSE_BYTES):
+        # Đọc dữ liệu giới hạn tối đa 2048 bytes
+        received_bytes = bytearray()
+        for chunk in resp.iter_content(chunk_size=512):
             if chunk:
-                chunks.append(chunk)
-                bytes_read += len(chunk)
-                if bytes_read >= MAX_RESPONSE_BYTES:
+                received_bytes.extend(chunk)
+                if len(received_bytes) >= MAX_RESPONSE_BYTES:
                     truncated = True
                     break
 
-        raw_body = b"".join(chunks)[:MAX_RESPONSE_BYTES]
-        try:
-            response_body = raw_body.decode("utf-8", errors="replace")
-        except Exception:
-            response_body = str(raw_body)
-
-        resp.close()
+        # Giải mã văn bản an toàn
+        response_body = received_bytes[:MAX_RESPONSE_BYTES].decode("utf-8", errors="replace")
 
     except requests.exceptions.Timeout:
         status_code = 504
-        response_body = json.dumps({"status": "error", "message": f"Client request timeout after {timeout} seconds"})
+        response_body = json.dumps({"status": "error", "message": f"Gateway timeout after {timeout}s"})
     except requests.exceptions.ConnectionError as conn_err:
-        status_code = 503
+        status_code = 502
         response_body = json.dumps({"status": "error", "message": f"Connection to Gateway failed: {conn_err}"})
     except requests.exceptions.RequestException as req_err:
         status_code = 500
@@ -287,7 +399,7 @@ def send_request(
     duration_ms = (time.time() - start_time) * 1000.0
     endpoint_path = target_url.replace(DEFAULT_GATEWAY_HOST, "")
 
-    # 6. Ghi vết Audit Log (tự động mask secret)
+    # 6. Ghi vết Audit Log (tự động mask secret + trạng thái phê duyệt)
     log_kwargs = {
         "endpoint": endpoint_path,
         "method": method_upper,
@@ -296,6 +408,7 @@ def send_request(
         "response_headers": response_headers,
         "response_body_snippet": response_body,
         "duration_ms": duration_ms,
+        "approval_status": approval_status
     }
     if log_file:
         log_kwargs["log_file"] = log_file
@@ -320,7 +433,8 @@ def burst_test(
     count: int = 1,
     method: str = "GET",
     headers: Optional[Dict[str, str]] = None,
-    payload: Optional[Any] = None
+    payload: Optional[Any] = None,
+    approval_status: Optional[str] = None
 ) -> Dict[str, Any]:
     """Gửi liên tiếp N request để kiểm thử giới hạn tốc độ (Rate Limit).
 
@@ -329,6 +443,7 @@ def burst_test(
         count (int): Số lượng request cần gửi.
         method (str): Phương thức HTTP.
         headers, payload: Các tham số truyền tương ứng.
+        approval_status (str, optional): Trạng thái phê duyệt HITL.
 
     Outputs:
         dict: Bảng tóm tắt kết quả (Tổng số đã gửi, phân bố mã trạng thái HTTP, chi tiết).
@@ -337,7 +452,7 @@ def burst_test(
     responses = []
 
     for _ in range(count):
-        res = send_request(url, method=method, headers=headers, payload=payload)
+        res = send_request(url, method=method, headers=headers, payload=payload, approval_status=approval_status)
         code = res.get("status_code", 0)
         status_counts[code] = status_counts.get(code, 0) + 1
         responses.append(res)
@@ -357,6 +472,7 @@ def main():
     parser.add_argument("--headers", type=str, default=None, help="JSON string of additional headers")
     parser.add_argument("--data", type=str, default=None, help="Raw payload data (for CLI user)")
     parser.add_argument("--count", type=int, default=1, help="Number of consecutive requests to send (burst test)")
+    parser.add_argument("--auto-approve", action="store_true", help="Auto approve risky requests without interactive prompt")
 
     args = parser.parse_args()
 
@@ -375,9 +491,20 @@ def main():
         except Exception:
             parsed_payload = args.data
 
+    # Đánh giá rủi ro HITL
+    risk_assessment = assess_request_risk(args.method, args.url, "custom" if args.data else "long_string", count=args.count)
+    if risk_assessment["requires_approval"]:
+        approved = prompt_cli_approval(risk_assessment, auto_approve=args.auto_approve)
+        if not approved:
+            print("[INFO] Action was canceled by user.")
+            sys.exit(0)
+        approval_status = "APPROVED"
+    else:
+        approval_status = None
+
     print(f"\n[+] Executing {args.method} request to '{args.url}' (Count: {args.count})...")
     if args.count > 1:
-        summary = burst_test(args.url, count=args.count, method=args.method, headers=parsed_headers, payload=parsed_payload)
+        summary = burst_test(args.url, count=args.count, method=args.method, headers=parsed_headers, payload=parsed_payload, approval_status=approval_status)
         print(f"[✔] Burst Test Summary: Sent {summary['total_sent']} requests.")
         print(f"    Status Codes Distribution: {json.dumps(summary['status_counts'])}")
     else:

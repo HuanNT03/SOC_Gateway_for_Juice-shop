@@ -26,7 +26,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from tools.safe_requester import send_request, burst_test, resolve_safe_payload, load_payloads_dict, TOOL_SCHEMA
+from tools.safe_requester import (
+    send_request,
+    burst_test,
+    resolve_safe_payload,
+    load_payloads_dict,
+    TOOL_SCHEMA,
+    assess_request_risk,
+    prompt_cli_approval
+)
+from tools.logger import log_audit_event
 from tools.redactor import sanitize_llm_messages, mask_sensitive_data
 from agent.guardrails import detect_prompt_injection, sanitize_untrusted_response
 
@@ -263,8 +272,12 @@ def generate_proposal(scenario_key_or_prompt: str) -> Dict[str, Any]:
     }
 
 
-def execute_proposal(proposal: Dict[str, Any]) -> Dict[str, Any]:
-    """Thực thi đề xuất thông qua safe_requester.py."""
+def execute_proposal(
+    proposal: Dict[str, Any],
+    auto_approve: bool = False,
+    interactive: bool = True
+) -> Dict[str, Any]:
+    """Thực thi đề xuất thông qua safe_requester.py kết hợp chốt chặn phê duyệt Human-in-the-Loop."""
     if proposal.get("is_direct_injection_blocked"):
         return {
             "status": "blocked",
@@ -281,15 +294,48 @@ def execute_proposal(proposal: Dict[str, Any]) -> Dict[str, Any]:
     category = proposal.get("payload_category", "long_string")
     value = proposal.get("payload_value", None)
 
+    # 1. Đánh giá rủi ro yêu cầu (Risk Assessment Engine)
+    risk = assess_request_risk(method, url, category, count=count)
+    approval_status = None
+
+    if risk["requires_approval"]:
+        if interactive:
+            approved = prompt_cli_approval(risk, auto_approve=auto_approve)
+            if not approved:
+                # Người dùng từ chối -> Hủy bỏ ngay lập tức, không gửi request qua mạng
+                log_audit_event(
+                    endpoint=url,
+                    method=method,
+                    status_code=0,
+                    request_headers={},
+                    response_headers={},
+                    response_body_snippet="ACTION_REJECTED_BY_USER",
+                    duration_ms=0.0,
+                    approval_status="REJECTED_BY_USER"
+                )
+                return {
+                    "status": "rejected",
+                    "status_code": 0,
+                    "message": "Thao tác đã bị hủy bỏ bởi người dùng (Human-in-the-Loop Rejection). Không có request nào được gửi đến Gateway.",
+                    "is_rejected_by_user": True,
+                    "endpoint": url,
+                    "method": method,
+                    "risk_assessment": risk,
+                    "body": "ACTION_REJECTED_BY_USER"
+                }
+            approval_status = "APPROVED"
+        else:
+            approval_status = "AUTO_APPROVED"
+
     try:
         resolved_payload = resolve_safe_payload(category, value)
     except Exception as err:
         return {"status": "error", "status_code": 400, "message": f"Payload resolution failed: {err}"}
 
     if count > 1:
-        return burst_test(url, count=count, method=method, payload=resolved_payload)
+        return burst_test(url, count=count, method=method, payload=resolved_payload, approval_status=approval_status)
 
-    return send_request(url, method=method, payload=resolved_payload)
+    return send_request(url, method=method, payload=resolved_payload, approval_status=approval_status)
 
 
 def analyze_response_with_llm(
@@ -409,6 +455,14 @@ def format_agent_report(result: Dict[str, Any]) -> str:
     if result.get("is_direct_injection_blocked"):
         return result.get("message", "🚨 Yêu cầu đã bị chặn bởi AI Guardrails.")
 
+    if result.get("is_rejected_by_user"):
+        return (
+            f"🛑 **HÀNH ĐỘNG ĐÃ BỊ HỦY BỎ BỞI NGƯỜI DÙNG (HUMAN-IN-THE-LOOP REJECTION)**\n"
+            f"- **Mục tiêu**: `{result.get('method', 'GET')} {result.get('endpoint', '')}`\n"
+            f"- **Trạng thái**: Hệ thống chốt chặn HITL đã hủy lệnh thành công. Tuyệt đối không có request nào được phát ra mạng tới API Gateway.\n"
+            f"- **Lý do**: Người dùng từ chối cấp quyền thực thi hành động rủi ro."
+        )
+
     if "total_sent" in result:
         total = result["total_sent"]
         counts = result.get("status_counts", {})
@@ -504,7 +558,7 @@ def format_agent_report(result: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def run_agent_session(user_prompt: str) -> str:
+def run_agent_session(user_prompt: str, auto_approve: bool = False) -> str:
     """Luồng xử lý hoàn chỉnh một phiên làm việc của Agent khi nhận lệnh từ Người dùng."""
     proposal = generate_proposal(user_prompt)
 
@@ -520,12 +574,14 @@ def run_agent_session(user_prompt: str) -> str:
     print(f"💡 [AGENT PROPOSAL] {proposal['explanation']}")
     print(f"   Target: {proposal['method']} {proposal['url']} | Payload Category: {proposal['payload_category']}")
 
-    result = execute_proposal(proposal)
+    result = execute_proposal(proposal, auto_approve=auto_approve)
     report = format_agent_report(result)
     return report
 
 
 if __name__ == "__main__":
-    prompt = sys.argv[1] if len(sys.argv) > 1 else "Kiểm tra rate limit của endpoint /api/Quantitys"
-    final_report = run_agent_session(prompt)
+    auto_app = "--auto-approve" in sys.argv or os.getenv("CI_MODE", "").lower() == "true" or os.getenv("AUTO_APPROVE", "").lower() == "true"
+    filtered_args = [arg for arg in sys.argv[1:] if arg != "--auto-approve"]
+    prompt = filtered_args[0] if len(filtered_args) > 0 else "Kiểm tra rate limit của endpoint /api/Quantitys"
+    final_report = run_agent_session(prompt, auto_approve=auto_app)
     print("\n" + final_report)
