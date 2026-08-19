@@ -17,7 +17,7 @@ YELLOW := \033[33m
 RED    := \033[31m
 RESET  := \033[0m
 
-.PHONY: help up down restart status logs routes clean web-pull web-logs ui-logs test-request test-ratelimit server-up server-down server-restart server-logs
+.PHONY: help up down restart status logs routes clean web-pull web-logs ui-logs test-request test-ratelimit server-up server-down server-restart server-logs test-week5 test-redaction test-live-injection agent-interactive
 
 # Default target when running 'make' without arguments
 .DEFAULT_GOAL := help
@@ -36,7 +36,7 @@ help: ## Hiển thị menu hướng dẫn các lệnh trong Makefile
 	@echo "$(GREEN)Cú pháp: make <tên-lệnh>$(RESET)"
 	@echo ""
 	@echo "$(YELLOW)Danh sách lệnh khả dụng:$(RESET)"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)make %-15s$(RESET) %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)make %-20s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(CYAN)==============================================================================$(RESET)"
 	@echo ""
@@ -135,5 +135,26 @@ test-request: ## Gửi 1 HTTP request an toàn qua Gateway (VD: make test-reques
 test-ratelimit: ## Chạy burst test N request kiểm chứng Rate Limit 429 (VD: make test-ratelimit COUNT=25)
 	@echo "$(CYAN)[+] Đang chạy Burst Rate Limit Test...$(RESET)"
 	@python3 tools/safe_requester.py --url $(or $(URL),/api/Quantitys) --method $(or $(METHOD),GET) --count $(or $(COUNT),25)
+
+
+## -----------------------------------------------------------------------------
+## WEEK 5 DEVSECOPS & AI AGENT TARGETS
+## -----------------------------------------------------------------------------
+
+test-week5: ## Chạy toàn bộ 40 test cases tự động của Tuần 5 (Redactor + Injection + HITL + UI)
+	@echo "$(CYAN)[+] Đang chạy toàn bộ Test Suite Tuần 5...$(RESET)"
+	@python3 -m unittest discover tests/ -v
+
+test-redaction: ## Kiểm tra khử khuẩn văn bản nhập vào từ người dùng (Hỗ trợ nhập trực tiếp hoặc TEXT="...")
+	@python3 tools/redactor.py $(if $(TEXT),--text "$(TEXT)",)
+
+test-live-injection: ## Chạy kịch bản kiểm thử E2E Live Prompt Injection + PII với Real LLM Model
+	@echo "$(CYAN)[+] Đang chạy kịch bản Live Prompt Injection & PII Probe với Real LLM...$(RESET)"
+	@python3 tools/simulate_injection_probe.py
+
+agent-interactive: ## Khởi chạy CLI Agent ở chế độ tương tác hỏi phê duyệt trực tiếp trên Terminal
+	@echo "$(CYAN)[+] Khởi chạy AI Security Agent tương tác trực tiếp...$(RESET)"
+	@python3 agent/agent.py --interactive
+
 
 

@@ -195,3 +195,40 @@ def sanitize_llm_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]
         sanitized_messages.append(clean_msg)
 
     return sanitized_messages
+
+
+def main():
+    """Hàm CLI Runner cho phép người dùng nhập văn bản để kiểm tra khử khuẩn PII."""
+    import argparse
+    parser = argparse.ArgumentParser(description="Sentinel Core - PII & Sensitive Data Redactor CLI")
+    parser.add_argument("--text", type=str, default=None, help="Chuỗi văn bản cần khử khuẩn")
+    args = parser.parse_args()
+
+    input_text = args.text
+    if not input_text:
+        print("\n" + "=" * 70)
+        print("🛡️  [PROJECT SENTINEL] PII & SENSITIVE DATA REDACTOR CLI")
+        print("=" * 70)
+        try:
+            input_text = input("👉 Nhập văn bản cần kiểm tra khử khuẩn PII: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\n[INFO] Đã hủy.")
+            return
+
+    if not input_text:
+        input_text = "Khách hàng 0912-345-678, Visa 4532-0150-9988-1234, email admin@juiceshop.local, pass secretPass123"
+
+    masked_output = mask_sensitive_data(input_text)
+    print("\n" + "=" * 70)
+    print("📋 [KẾT QUẢ ĐỐI SOÁT KHỬ KHUẨN PII]")
+    print("=" * 70)
+    print("[1] VĂN BẢN ĐẦU VÀO (RAW INPUT):")
+    print(f"    {input_text}")
+    print("-" * 70)
+    print("[2] VĂN BẢN ĐÃ LÀM SẠCH (SANITIZED OUTPUT):")
+    print(f"    {masked_output}")
+    print("=" * 70 + "\n")
+
+
+if __name__ == "__main__":
+    main()

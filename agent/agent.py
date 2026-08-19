@@ -580,8 +580,29 @@ def run_agent_session(user_prompt: str, auto_approve: bool = False) -> str:
 
 
 if __name__ == "__main__":
+    is_interactive = "--interactive" in sys.argv or "-i" in sys.argv
     auto_app = "--auto-approve" in sys.argv or os.getenv("CI_MODE", "").lower() == "true" or os.getenv("AUTO_APPROVE", "").lower() == "true"
-    filtered_args = [arg for arg in sys.argv[1:] if arg != "--auto-approve"]
-    prompt = filtered_args[0] if len(filtered_args) > 0 else "Kiểm tra rate limit của endpoint /api/Quantitys"
-    final_report = run_agent_session(prompt, auto_approve=auto_app)
-    print("\n" + final_report)
+    filtered_args = [arg for arg in sys.argv[1:] if arg not in ["--auto-approve", "--interactive", "-i"]]
+
+    if is_interactive:
+        print("\n" + "=" * 70)
+        print("🤖 [PROJECT SENTINEL] AI SECURITY AGENT INTERACTIVE CLI")
+        print("=" * 70)
+        print("Nhập câu lệnh kiểm thử an ninh (hoặc gõ 'exit' / 'quit' để thoát):")
+        while True:
+            try:
+                user_msg = input("\n👉 Sentinel Prompt: ").strip()
+                if not user_msg:
+                    continue
+                if user_msg.lower() in ["exit", "quit", "q"]:
+                    print("👋 Tạm biệt!")
+                    break
+                final_report = run_agent_session(user_msg, auto_approve=auto_app)
+                print("\n" + final_report)
+            except (KeyboardInterrupt, EOFError):
+                print("\n👋 Đã thoát phiên làm việc.")
+                break
+    else:
+        prompt = filtered_args[0] if len(filtered_args) > 0 else "Kiểm tra rate limit của endpoint /api/Quantitys"
+        final_report = run_agent_session(prompt, auto_approve=auto_app)
+        print("\n" + final_report)
