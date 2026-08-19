@@ -1,6 +1,6 @@
-# Project Sentinel - DevSecOps & Kong API Gateway (Week 4)
+# Project Sentinel - DevSecOps, AI Security Agent & API Gateway (Week 5)
 
-Dự án triển khai lớp bảo vệ Kong API Gateway đứng trước ứng dụng OWASP Juice Shop, tích hợp bộ kiểm thử HTTP an toàn (Python Core Tool) phục vụ AI Security Agent và DevSecOps Audit.
+Dự án triển khai lớp bảo vệ **Kong API Gateway (v3.6)** đứng trước ứng dụng **OWASP Juice Shop (v20.1.1)**, tích hợp **AI Security Agent (Qwen)**, **Bộ khiên phòng vệ Prompt Injection 2 chiều**, **Bộ khử khuẩn dữ liệu PII/Secrets**, **Chốt chặn phê duyệt Human-in-the-Loop (HITL)** và **Giao diện Web UI Dashboard 4 Tabs** phục vụ DevSecOps & Security Audit.
 
 ---
 
@@ -18,17 +18,18 @@ Dự án triển khai lớp bảo vệ Kong API Gateway đứng trước ứng d
    cp .env.example .env
    ```
 
-2. **Cài đặt thư viện Python cần thiết**:
+2. **Cài đặt thư viện Python**:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Khởi chạy hạ tầng Kong Gateway & Juice Shop**:
+3. **Khởi chạy toàn bộ hạ tầng (Juice Shop + Kong Gateway + Agent UI)**:
    ```bash
    make up
    ```
-   - **Kong Proxy Access**: [http://localhost:8000](http://localhost:8000)
+   - **Kong Proxy Gateway**: [http://localhost:8000](http://localhost:8000)
    - **Kong Admin API**: [http://localhost:8001](http://localhost:8001) *(Cổng nội bộ)*
+   - **Streamlit Web UI Dashboard**: [http://localhost:8501](http://localhost:8501)
 
 4. **Kiểm tra trạng thái dịch vụ**:
    ```bash
@@ -39,184 +40,106 @@ Dự án triển khai lớp bảo vệ Kong API Gateway đứng trước ứng d
 
 ## 🛠️ 2. Danh Sách Lệnh Makefile Khả Dụng
 
-| Lệnh | Cú pháp sử dụng | Mô tả chức năng |
+| Nhóm Lệnh | Cú pháp | Mô tả chức năng |
 |---|---|---|
-| `make help` | `make help` | Hiển thị menu hướng dẫn các lệnh trong Makefile. |
-| `make up` | `make up` | Khởi chạy toàn bộ hạ tầng (Juice Shop + Kong Gateway + Streamlit Agent UI). |
-| `make down` | `make down` | Dừng và gỡ bỏ toàn bộ container. |
-| `make restart` | `make restart` | Khởi động lại toàn bộ các dịch vụ. |
-| `make server-up` | `make server-up` | Khởi chạy riêng dịch vụ máy chủ Backend (Kong Gateway + Juice Shop). |
-| `make server-down` | `make server-down` | Dừng riêng dịch vụ máy chủ Backend (Kong Gateway + Juice Shop). |
-| `make server-restart` | `make server-restart` | Khởi động lại riêng dịch vụ máy chủ Backend. |
-| `make server-logs` | `make server-logs` | Xem nhật ký (logs) thời gian thực của máy chủ Backend. |
-| `make ui-logs` | `make ui-logs` | Xem nhật ký (logs) thời gian thực của container Streamlit Agent UI. |
-| `make status` | `make status` | Kiểm tra trạng thái và Health Check của các container. |
-| `make logs` | `make logs` | Xem nhật ký (logs) thời gian thực của toàn bộ hệ thống. |
-| `make routes` | `make routes` | Truy vấn danh sách Routes đang nạp trong Kong Admin API (Port 8001). |
-| `make test-request` | `make test-request URL=/api/Quantitys METHOD=GET` | Gửi 1 HTTP request an toàn qua Kong Gateway. |
-| `make test-ratelimit` | `make test-ratelimit COUNT=25` | Chạy burst test N request kiểm chứng Rate Limit (429). |
-| `make clean` | `make clean` | Dọn dẹp hoàn toàn containers, volumes và Docker images. |
+| **Hạ tầng Docker** | `make up` | Khởi chạy toàn bộ hạ tầng (Juice Shop + Kong Gateway + Streamlit UI). |
+| | `make down` | Dừng và gỡ bỏ toàn bộ containers. |
+| | `make restart` | Khởi động lại toàn bộ dịch vụ. |
+| | `make status` | Kiểm tra trạng thái và Health Check của các container. |
+| | `make logs` | Xem nhật ký thời gian thực toàn hệ thống. |
+| | `make clean` | Dọn dẹp hoàn toàn containers, volumes và Docker images. |
+| **Kiểm thử Tuần 5** | `make test-week5` | Chạy toàn bộ **40 unit test cases** tự động (Redaction + Injection + HITL + UI). |
+| | `make test-redaction` | Kiểm tra khử khuẩn văn bản nhập từ bàn phím (hỗ trợ cả `TEXT="..."`). |
+| | `make test-live-injection` | Chạy kịch bản E2E Live Prompt Injection + PII Probe với Real LLM Model (Qwen). |
+| | `make agent-interactive` | Khởi chạy CLI Agent ở chế độ tương tác hỏi phê duyệt HITL trực tiếp trên Terminal. |
+| **Kiểm thử HTTP Gateway** | `make test-request` | Gửi 1 HTTP request qua Gateway (`make test-request URL=/api/Quantitys METHOD=GET`). |
+| | `make test-ratelimit` | Chạy burst test N request kiểm chứng Rate Limit 429 (`make test-ratelimit COUNT=25`). |
+| **Trợ giúp** | `make help` | Hiển thị menu hướng dẫn các lệnh trong Makefile. |
 
 ---
 
-## 🧪 3. Hướng Dẫn Sử Dụng Core Python Tool (`tools/safe_requester.py`)
+## 🛡️ 3. Các Trụ Cột An Ninh Cốt Lõi (Week 5 Architecture)
 
-Công cụ Python Tool được thiết kế nhằm tự động tiêm `x-api-key` bí mật từ môi trường, áp đặt timeout 7 giây, giải nén `gzip` an toàn và tự động mã hóa bí mật (`mask_sensitive_data`) trước khi ghi log vào `logs/gateway_audit.jsonl`.
+### 3.1. Advanced PII & Data Redaction (`tools/redactor.py`)
+- Tự động nhận diện và che giấu 100% thông tin nhạy cảm trước khi ghi tệp log Audit hoặc gửi ra LLM Provider:
+  - Số điện thoại Việt Nam & quốc tế ➔ `[REDACTED_PHONE]`
+  - Số CCCD/CMND ➔ `[REDACTED_PII]`
+  - Số thẻ tín dụng / Visa / Mastercard ➔ `[REDACTED_CREDIT_CARD]`
+  - Địa chỉ Email ➔ `[REDACTED_EMAIL]`
+  - Mật khẩu nội dòng & Connection String DB ➔ `[REDACTED_PASSWORD]`
+  - Bearer JWT Token & Headers nhạy cảm (`x-api-key`, `authorization`, `cookie`) ➔ `[REDACTED_JWT]`, `[REDACTED_SECRET]`
 
-### Cú pháp chạy trực tiếp bằng Python:
+### 3.2. Prompt Injection Defense & AI Guardrails (`agent/guardrails.py`)
+- **Phòng thủ 2 chiều (Bidirectional Shield)**:
+  - **Lớp 1 (Direct User Input)**: Ngăn chặn câu lệnh tấn công từ người dùng cố ý bẻ khóa vai trò (Jailbreak / DAN mode), ghi đè quy tắc (`ignore previous instructions`), hoặc moi móc API Key/System Prompt. Tự động chặn ngay tại cổng vào và từ chối gọi Tool.
+  - **Lớp 2 (Indirect HTTP Response)**: Quét phản hồi từ máy chủ, giương cờ cảnh báo nếu chứa injection độc hại song ngữ (Anh - Việt), và bọc dữ liệu trong thẻ `<untrusted_http_response>` trước khi gửi sang Real LLM.
+- **Quy tắc Bất biến (Inviolable Guardrails)** trong `agent/system_prompt.txt`.
+
+### 3.3. Human-in-the-Loop (HITL) Approval Engine (`tools/safe_requester.py`)
+- **Động cơ phân loại rủi ro (`assess_request_risk`)**:
+  - `LOW`: Phương thức `GET`/`OPTIONS` allowlist, payload lành tính, `count <= 10` ➔ Tự động thực thi an toàn.
+  - `MEDIUM`: Phương thức `POST`/`PUT`/`DELETE`, payload thăm dò `special_chars`, hoặc `10 < count <= 20` ➔ Bắt buộc phê duyệt.
+  - `HIGH`: Payload ngoại cỡ `oversized_payload` (~1.5MB) hoặc burst test `count > 20` ➔ Bắt buộc phê duyệt cảnh báo tài nguyên.
+  - `CRITICAL`: Direct Prompt Injection ➔ Guardrail tự động chặn đứng.
+- **Hộp thoại tương tác (`prompt_cli_approval`)**:
+  - Khi người dùng chọn `Approve` (`y/Y`): Gửi request qua Gateway, log `approval_status: "APPROVED"`.
+  - Khi người dùng chọn `Reject` (`n/N` hoặc Enter): **Hủy bỏ ngay lập tức, 0 network socket**, log `approval_status: "REJECTED_BY_USER"`.
+  - Hỗ trợ `--auto-approve`, `CI_MODE=true` cho môi trường CI/CD.
+
+### 3.4. Web UI Dashboard 4 Tabs (`agent/ui.py`)
+1. **Tab 1: 🤖 AI Security Agent**: Tương tác tự nhiên, hỗ trợ thẻ HITL Warning Card, Real LLM Dynamic Analysis và Preset Live Injection & PII Probe.
+2. **Tab 2: ⚡ Manual HTTP Tester**: Thử nghiệm HTTP request & Burst test thủ công kèm đánh giá rủi ro HITL trước khi phát lệnh.
+3. **Tab 3: 📜 Audit Log Inspector**: Giám sát nhật ký Audit Log (`logs/gateway_audit.jsonl`) đã khử khuẩn 100% PII.
+4. **Tab 4: 🛡️ Guardrails & Safety Inspector**: Công cụ khử khuẩn PII trực tiếp (Live PII Tester), đối soát lịch sử phê duyệt HITL và System Prompt rules.
+
+---
+
+## 🧪 4. Kiểm Thử Tự Động Toàn Diện (Automated Test Suite)
+
+Dự án sở hữu bộ kiểm thử tự động gồm **40 test cases** bao phủ toàn diện từ Plan 1 đến Plan 9:
 
 ```bash
-python3 tools/safe_requester.py --url <ENDPOINT> --method <GET|POST|OPTIONS> [--data '<JSON_PAYLOAD>'] [--count N]
+make test-week5
 ```
 
-### 💡 Các kịch bản tham số mẫu đề xuất:
-
-1. **Kiểm thử Endpoint hợp lệ trong Allowlist (200 OK)**:
-   ```bash
-   make test-request URL=/api/Quantitys METHOD=GET
-   ```
-
-2. **Kiểm thử Endpoint ngoài phạm vi Allowlist (403 Forbidden)**:
-   ```bash
-   make test-request URL=/rest/admin/application-version METHOD=GET
-   ```
-
-3. **Kiểm thử Phương thức HTTP bị cấm theo Policy (405 Method Not Allowed)**:
-   ```bash
-   make test-request URL=/api/Quantitys METHOD=DELETE
-   ```
-
-4. **Kiểm thử Giới hạn tốc độ Burst Rate Limit (429 Too Many Requests)**:
-   ```bash
-   make test-ratelimit URL=/api/Quantitys COUNT=25
-   ```
-
-5. **Kiểm thử Payload ngoại cỡ > 1MB (413 Payload Too Large)**:
-   ```bash
-   make test-request URL=/api/Quantitys METHOD=POST DATA=oversized_payload
-   ```
-   > **Lưu ý**: Phải sử dụng phương thức **`METHOD=POST`** (hoặc PUT) để tải Request Body lên kết nối. Phương thức `GET` không upload body nên Gateway sẽ trả về 200 OK bình thường.
-
----
-
-## 🛡️ 4. Thư Viện Safe Payloads & Guardrails (`config/payloads.json`)
-
-Hệ thống cung cấp danh sách các nhóm payload kiểm thử an toàn (benign test payloads) được lưu tại `config/payloads.json`:
-
-- **`long_string`**: Kiểm thử xử lý chuỗi ký tự dài an toàn.
-- **`special_chars`**: Kiểm thử bộ lọc ký tự HTML/SQL benign (`' " < > & ; --`).
-- **`empty_values`**: Kiểm thử giá trị rỗng (`""`, `null`, `{}`).
-- **`type_mismatch`**: Kiểm thử sai kiểu dữ liệu trường dữ liệu.
-- **`query_param_injection`**: Kiểm thử đường truyền query string (`' OR 1=1`, `<img src=x>`).
-- **`oversized_payload`**: Kích hoạt kịch bản thử payload 1.5MB do Tool tự sinh trong RAM (chặn `413 Payload Too Large`).
-
-### System Prompt Guardrails (`agent/system_prompt.txt`):
-- Chống Prompt Injection từ HTTP Response body.
-- **Mindset Guardrails**: Định hướng AI Agent coi các mã **`413`**, **`429`**, **`403`** là **thành công của hệ thống phòng thủ**, không tự ý retry.
-
----
-
----
-
-## 🤖 5. Hướng Dẫn Cấu Hình & Sử Dụng Real AI Security Agent (`agent/agent.py`)
-
-AI Security Agent là một **Agent thực sự** được tích hợp thư viện `openai` SDK (tương thích với **Alibaba Cloud DashScope / Qwen API** hoặc OpenAI). Agent có khả năng phân tích câu lệnh tự nhiên, thực hiện **Tool Calling (Function Calling)** để gọi `tools/safe_requester.py` và tổng hợp báo cáo an ninh theo Mindset Guardrails.
-
-### 🔑 Cấu Hình Biến Môi Trường (`.env`):
-
-Khai báo các tham số API Key và Endpoint trong tệp `.env` (xem mẫu tại `.env.example`):
-
-```env
-# AI Security Agent LLM Configuration (OpenAI SDK / Alibaba Cloud Qwen API)
-AI_AGENT_API_KEY=your_alibaba_or_openai_api_key_here
-AI_AGENT_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
-AI_AGENT_MODEL=qwen-plus
-
-# Kong Gateway API Key Secret
-KONG_VAULT_ENV_AGENT_API_KEY=your_kong_gateway_agent_api_key_here
-AGENT_API_KEY=your_kong_gateway_agent_api_key_here
+**Kết quả kiểm thử**:
+```text
+Ran 40 tests in 0.020s
+OK (100% PASS)
 ```
 
-> **Lưu ý**: Nếu chưa cấu hình `AI_AGENT_API_KEY` hoặc hết quota, Agent sẽ tự động kích hoạt **Chế độ dự phòng (Rule-based Engine Fallback)** để đảm bảo hệ thống và các bộ kiểm thử tự động (Unit Tests) hoạt động liên tục không bị gián đoạn.
-
-### 🛠️ Khai Báo Tool Specification (`TOOL_SCHEMA`):
-Agent sử dụng bảng định nghĩa Tool Schema chuẩn hóa dạng JSON Schema để truyền tham số chính xác vào `safe_requester.py`:
-- **Đầu vào (Inputs)**:
-  - `url` (str): Path endpoint mục tiêu (VD: `/api/Quantitys`, `/rest/admin/application-version`).
-  - `method` (str): Phương thức HTTP (`GET`, `POST`, `OPTIONS`).
-  - `payload_category` (str): Nhóm payload an toàn (`long_string`, `special_chars`, `empty_values`, `type_mismatch`, `query_param_injection`, `oversized_payload`).
-  - `payload_value` (str, optional): Giá trị cụ thể chọn trong nhóm.
-  - `count` (int, optional): Số lượng request burst rate limit (VD: `25`).
-- **Đầu ra (Outputs)**: Dictionary gồm `status_code`, `endpoint`, `method`, `headers` (masked), `body` (masked, max 2KB), `truncated`, `duration_ms`.
-
-### Cú pháp chạy trực tiếp từ Terminal:
-
-```bash
-python3 agent/agent.py "<CÂU_LỆNH_KIỂM_THỬ>"
-```
-
-### 💡 Các ví dụ lệnh mẫu:
-
-1. **Kiểm thử Rate Limit**:
-   ```bash
-   python3 agent/agent.py "Hãy kiểm tra rate limit của endpoint /api/Quantitys"
-   ```
-
-2. **Kiểm thử Endpoint bị cấm (403 Forbidden)**:
-   ```bash
-   python3 agent/agent.py "Thử truy cập vào endpoint admin /rest/admin/application-version"
-   ```
-
-3. **Kiểm thử Payload ngoại cỡ (413 Payload Too Large)**:
-   ```bash
-   python3 agent/agent.py "Gửi file lớn hoặc oversized payload để test gateway"
-   ```
-
-4. **Kiểm thử Ký tự đặc biệt (XSS/Injection Probe)**:
-   ```bash
-   python3 agent/agent.py "Thử chèn ký tự đặc biệt vào search endpoint"
-   ```
-
 ---
 
-## 🖥️ 6. Giao Diện Web UI (Streamlit Dashboard)
+## 📁 5. Cấu Trúc Thư Mục Dự Án
 
-Giao diện trực quan dựa trên Streamlit cho phép người dùng điều khiển Trợ lý AI Security Agent, thực hiện các kịch bản test thủ công và soi nhật ký Audit Log thời gian thực.
-
-### 🚀 Có 2 Phương Pháp Khởi Chạy UI:
-
-#### 1. Phương Pháp 1: Chạy bằng Docker Compose (Khuyên dùng cho Production / Demo)
-* **Khi nào nên dùng**: Khi chạy demo toàn hệ thống hoặc triển khai môi trường chuẩn isolated bằng Docker.
-* **Cú pháp khởi chạy**:
-  ```bash
-  make up
-  ```
-  *(hoặc khởi chạy riêng UI nếu hạ tầng Kong server đã lên: `make up`)*
-* **Cách kết nối & Endpoint**:
-  - Container UI tự động kết nối qua mạng nội bộ Docker `sentinel-net` tới Kong Gateway tại `GATEWAY_HOST=http://gateway:8000`.
-  - Mở trình duyệt truy cập: `http://localhost:8501`.
-  - Khi nhập endpoint trên TAB 1 (AI Agent) hoặc TAB 2 (Manual Tester), bạn chỉ cần điền **đường dẫn tương đối** (VD: `/api/Quantitys`, `/rest/admin/application-version`).
-
-#### 2. Phương Pháp 2: Chạy trực tiếp từ Host Terminal (Khuyên dùng khi Dev / Debug giao diện)
-* **Khi nào nên dùng**: Khi bạn đang phát triển mã nguồn, muốn chỉnh sửa `agent/ui.py` hoặc debug nhanh cục bộ trên máy host mà không cần Rebuild lại Docker image.
-* **Cú pháp khởi chạy**:
-  ```bash
-  streamlit run agent/ui.py
-  ```
-* **Cách kết nối & Endpoint**:
-  - Khi chạy trực tiếp trên máy host, Tool tự động kết nối tới Kong Gateway trên Host qua cổng `http://localhost:8000`.
-  - Nếu muốn chỉ định host khác, bạn có thể thiết lập trước khi chạy: `export GATEWAY_HOST=http://localhost:8000`.
-  - Khi nhập endpoint trên giao diện, bạn điền **đường dẫn tương đối** (VD: `/api/Quantitys`, `/rest/products/search`) hoặc URL đầy đủ `http://localhost:8000/api/Quantitys`.
-
----
-
-## 🧪 7. Kiểm Thử Độc Lập Unit Test Suite
-
-Toàn bộ các test case được đặt tập trung tại thư mục `tests/`:
-
-```bash
-python3 -m unittest discover -s tests
 ```
-
-
-
+SOC_Gateway_for_Juice-shop/
+├── agent/                      # AI Security Agent & Guardrails
+│   ├── agent.py                # Core Agent logic, Tool Calling, Real LLM (Qwen) & HITL
+│   ├── guardrails.py           # 2-way Prompt Injection scanner & Context Delimiter
+│   ├── system_prompt.txt       # System Prompt với Inviolable Guardrail Rules
+│   └── ui.py                   # Streamlit Web UI Dashboard (4 Tabs)
+├── config/                     # Cấu hình hệ thống & Payloads
+│   ├── allowlist.json          # Danh sách endpoint hợp lệ
+│   └── payloads.json           # Thư viện Benign Test Payloads
+├── docs/                       # Tài liệu dự án & Báo cáo kỹ thuật
+│   └── reports/week5/          # Báo cáo kỹ thuật chi tiết các tuần
+├── gateway/                    # Cấu hình Kong API Gateway
+│   └── kong.yml                # Cấu hình Declarative DB-less cho Kong v3.6
+├── logs/                       # Nhật ký kiểm toán an toàn (Audit Logs)
+│   └── gateway_audit.jsonl     # Audit log format JSONL đã che 100% Secret & PII
+├── tests/                      # Bộ kiểm thử tự động (40 Unit Test Cases)
+│   ├── test_advanced_redactor.py # Kiểm thử PII, CCCD, Thẻ tín dụng, DB URI
+│   ├── test_human_approval.py  # Kiểm thử HITL Risk Engine & Approve/Reject
+│   ├── test_prompt_injection.py# Kiểm thử Prompt Injection song ngữ & XML Delimiters
+│   ├── test_ui.py              # Kiểm thử UI Helpers & Badges
+│   └── ...
+├── tools/                      # Công cụ Python Core
+│   ├── logger.py               # Module ghi log audit an toàn
+│   ├── redactor.py             # Module khử khuẩn PII & làm sạch LLM messages
+│   ├── safe_requester.py       # Core Safe Requester Client & HITL Evaluator
+│   └── simulate_injection_probe.py # Kịch bản E2E Live Prompt Injection Probe
+├── docker-compose.yml          # Quản lý 3 containers (Kong, Juice Shop, Agent UI)
+├── Makefile                    # Hệ thống tự động hóa lệnh CLI
+└── requirements.txt            # Danh sách thư viện phụ thuộc Python
+```
