@@ -66,9 +66,9 @@ PHONE_REGEX = re.compile(
 # 6. Pattern Regex nhận diện Email
 EMAIL_REGEX = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
 
-# 7. Pattern Regex nhận diện Mật khẩu & Token gán trực tiếp trong văn bản (key=value)
+# 7. Pattern Regex nhận diện Mật khẩu & Token gán trực tiếp trong văn bản (key=value, key: value, key is value, mật khẩu: value)
 INLINE_SECRET_REGEX = re.compile(
-    r'(?i)\b(password|passwd|pass|token|secret|api[_-]?key|client[_-]?secret)\s*([:=])\s*([\'"][^\'"\r\n]+[\'"]|[^\s,;&\}\]]+)'
+    r'(?i)\b(password|passwd|pass|mật\s*khẩu|mat\s*khau|token|secret|api[_-]?key|client[_-]?secret)\s*([:=]|\bis\b|\blà\b)\s*([\'"][^\'"\r\n]+[\'"]|[^\s,;&\}\]]+)'
 )
 
 # 8. Pattern Regex nhận diện URI Connection String chứa user:password
@@ -98,17 +98,18 @@ def _mask_string(text: str) -> str:
     # 3. Che URI Connection String (VD: postgres://user:pass@host)
     text = URI_CREDENTIAL_REGEX.sub(r'\1\2:[REDACTED_PASSWORD]@', text)
 
-    # 4. Che Inline key=value secrets (VD: password=abc, api_key=xyz)
+    # 4. Che Inline key=value secrets (VD: password=abc, pass: 123, mật khẩu là xyz)
     def _replace_inline_secret(match: re.Match) -> str:
         key_name = match.group(1)
         separator = match.group(2)
         lower_key = key_name.lower()
-        if "pass" in lower_key:
-            return f"{key_name}{separator}[REDACTED_PASSWORD]"
+        sep_str = f" {separator} " if separator in ["is", "là"] else separator
+        if "pass" in lower_key or "mật" in lower_key or "mat" in lower_key:
+            return f"{key_name}{sep_str}[REDACTED_PASSWORD]"
         elif "token" in lower_key:
-            return f"{key_name}{separator}[REDACTED_TOKEN]"
+            return f"{key_name}{sep_str}[REDACTED_TOKEN]"
         else:
-            return f"{key_name}{separator}[REDACTED_SECRET]"
+            return f"{key_name}{sep_str}[REDACTED_SECRET]"
 
     text = INLINE_SECRET_REGEX.sub(_replace_inline_secret, text)
 
