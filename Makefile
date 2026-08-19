@@ -148,9 +148,9 @@ test-week5: ## Chạy toàn bộ 40 test cases tự động của Tuần 5 (Reda
 test-redaction: ## Kiểm tra khử khuẩn văn bản nhập vào từ người dùng (Hỗ trợ nhập trực tiếp hoặc TEXT="...")
 	@python3 tools/redactor.py $(if $(TEXT),--text "$(TEXT)",)
 
-test-live-injection: ## Chạy kịch bản kiểm thử E2E Live Prompt Injection + PII với Real LLM Model
+test-live-injection: ## Chạy kịch bản kiểm thử E2E Live Prompt Injection + PII (Hỗ trợ RESPONSE="...")
 	@echo "$(CYAN)[+] Đang chạy kịch bản Live Prompt Injection & PII Probe với Real LLM...$(RESET)"
-	@python3 tools/simulate_injection_probe.py
+	@python3 tools/simulate_injection_probe.py $(if $(RESPONSE),--response '$(RESPONSE)',)
 
 agent-interactive: ## Khởi chạy CLI Agent ở chế độ tương tác hỏi phê duyệt trực tiếp trên Terminal
 	@echo "$(CYAN)[+] Khởi chạy AI Security Agent tương tác trực tiếp...$(RESET)"
